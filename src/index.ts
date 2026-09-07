@@ -53,7 +53,6 @@ function createServer() {
 			return { content: [{ type: "text", text: String(result) }] };
 		},
 	);
-
 	server.registerTool(
 		"monobank_balance",
 		{ inputSchema: z.object({}) },
@@ -71,7 +70,6 @@ function createServer() {
 			return { content: [{ type: "text", text: JSON.stringify(accounts, null, 2) }] };
 		},
 	);
-
 	server.registerTool(
 		"monobank_transactions",
 		{
@@ -98,7 +96,41 @@ function createServer() {
 			return { content: [{ type: "text", text: JSON.stringify(transactions, null, 2) }] };
 		},
 	);
-
+	server.registerTool(
+		"novaposhta_status",
+		{
+			inputSchema: z.object({
+				tracking_numbers: z.array(z.string()).describe("Номери ТТН Нової Пошти (до 100 за раз)"),
+			}),
+		},
+		async ({ tracking_numbers }) => {
+			const res = await fetch("https://api.novaposhta.ua/v2.0/json/", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					apiKey: currentEnv.NOVAPOSHTA_API_KEY || "",
+					modelName: "TrackingDocument",
+					calledMethod: "getStatusDocuments",
+					methodProperties: {
+						Documents: tracking_numbers.map((num) => ({ DocumentNumber: num, Phone: "" })),
+					},
+				}),
+			});
+			const data: any = await res.json();
+			if (!data.success) {
+				return { content: [{ type: "text", text: `Помилка: ${JSON.stringify(data.errors || data)}` }] };
+			}
+			const statuses = (data.data || []).map((d: any) => ({
+				trackingNumber: d.Number,
+				status: d.Status,
+				recipientCity: d.CityRecipient,
+				warehouse: d.WarehouseRecipient,
+				scheduledDelivery: d.ScheduledDeliveryDate,
+				actualDelivery: d.ActualDeliveryDate,
+			}));
+			return { content: [{ type: "text", text: JSON.stringify(statuses, null, 2) }] };
+		},
+	);
 	return server;
 }
 
