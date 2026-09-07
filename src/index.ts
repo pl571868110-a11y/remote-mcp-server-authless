@@ -131,6 +131,33 @@ function createServer() {
 			return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
 		},
 	);
+	server.registerTool(
+		"novapay_test_auth",
+		{ inputSchema: z.object({}) },
+		async () => {
+			const soapBody = `<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <UserAuthenticationJWT xmlns="http://tempuri.org/">
+      <login>${currentEnv.NOVAPAY_LOGIN}</login>
+      <refreshToken>${currentEnv.NOVAPAY_REFRESH_TOKEN}</refreshToken>
+      <publicCertificate>${currentEnv.NOVAPAY_PUBLIC_CERTIFICATE}</publicCertificate>
+    </UserAuthenticationJWT>
+  </soap:Body>
+</soap:Envelope>`;
+
+			const res = await fetch("https://business.novapay.ua/Services/ClientAPIService.svc", {
+				method: "POST",
+				headers: {
+					"Content-Type": "text/xml; charset=utf-8",
+					"SOAPAction": "http://tempuri.org/IClientAPIService/UserAuthenticationJWT",
+				},
+				body: soapBody,
+			});
+			const text = await res.text();
+			return { content: [{ type: "text", text: `HTTP статус: ${res.status}\n\n${text.slice(0, 3000)}` }] };
+		},
+	);
 	return server;
 }
 
