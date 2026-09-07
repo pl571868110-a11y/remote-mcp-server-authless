@@ -120,7 +120,15 @@ function createServer() {
 			if (!data.success) {
 				return { content: [{ type: "text", text: `Помилка: ${JSON.stringify(data.errors || data)}` }] };
 			}
-			return { content: [{ type: "text", text: JSON.stringify(data.data, null, 2) }] };
+			const results = (data.data || []).map((d: any) => ({
+				trackingNumber: d.Number,
+				shopifyOrder: d.ClientBarcode,
+				status: d.Status,
+				paymentCollected: d.ExpressWaybillPaymentStatus === "Payed",
+				amount: d.AfterpaymentOnGoodsCost,
+				actualDeliveryDate: d.ActualDeliveryDate,
+			}));
+			return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
 		},
 	);
 	return server;
