@@ -139,9 +139,11 @@ function createServer() {
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
     <UserAuthenticationJWT xmlns="http://tempuri.org/">
-      <login>${currentEnv.NOVAPAY_LOGIN}</login>
-      <refreshToken>${currentEnv.NOVAPAY_REFRESH_TOKEN}</refreshToken>
-      <publicCertificate>${currentEnv.NOVAPAY_PUBLIC_CERTIFICATE}</publicCertificate>
+      <request>
+        <refresh_token>${currentEnv.NOVAPAY_REFRESH_TOKEN}</refresh_token>
+        <login>${currentEnv.NOVAPAY_LOGIN}</login>
+        <public_certificate>${currentEnv.NOVAPAY_PUBLIC_CERTIFICATE}</public_certificate>
+      </request>
     </UserAuthenticationJWT>
   </soap:Body>
 </soap:Envelope>`;
