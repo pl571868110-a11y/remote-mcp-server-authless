@@ -120,15 +120,7 @@ function createServer() {
 			if (!data.success) {
 				return { content: [{ type: "text", text: `Помилка: ${JSON.stringify(data.errors || data)}` }] };
 			}
-			const statuses = (data.data || []).map((d: any) => ({
-				trackingNumber: d.Number,
-				status: d.Status,
-				recipientCity: d.CityRecipient,
-				warehouse: d.WarehouseRecipient,
-				scheduledDelivery: d.ScheduledDeliveryDate,
-				actualDelivery: d.ActualDeliveryDate,
-			}));
-			return { content: [{ type: "text", text: JSON.stringify(statuses, null, 2) }] };
+			return { content: [{ type: "text", text: JSON.stringify(data.data, null, 2) }] };
 		},
 	);
 	return server;
