@@ -164,13 +164,14 @@ function createServer() {
 		"privatbank_balance",
 		{
 			inputSchema: z.object({
-				account: z.string().describe("IBAN рахунку ПриватБанк"),
+				account: z.string().optional().describe("IBAN рахунку ПриватБанк. Якщо не вказано — повернуться дані за всіма активними рахунками"),
 				start_date: z.string().describe("Дата початку у форматі DD-MM-YYYY"),
 				end_date: z.string().optional().describe("Дата кінця у форматі DD-MM-YYYY (необов'язково)"),
 			}),
 		},
 		async ({ account, start_date, end_date }) => {
-			const params = new URLSearchParams({ acc: account, startDate: start_date });
+			const params = new URLSearchParams({ startDate: start_date });
+			if (account) params.set("acc", account);
 			if (end_date) params.set("endDate", end_date);
 			const res = await fetch(`https://acp.privatbank.ua/api/statements/balance?${params.toString()}`, {
 				headers: {
@@ -187,14 +188,15 @@ function createServer() {
 		"privatbank_transactions",
 		{
 			inputSchema: z.object({
-				account: z.string().describe("IBAN рахунку ПриватБанк"),
+				account: z.string().optional().describe("IBAN рахунку ПриватБанк. Якщо не вказано — повернуться дані за всіма активними рахунками"),
 				start_date: z.string().describe("Дата початку у форматі DD-MM-YYYY"),
 				end_date: z.string().optional().describe("Дата кінця у форматі DD-MM-YYYY (необов'язково)"),
 				limit: z.number().optional().describe("Кількість записів, макс 500, рекомендовано до 100"),
 			}),
 		},
 		async ({ account, start_date, end_date, limit }) => {
-			const params = new URLSearchParams({ acc: account, startDate: start_date });
+			const params = new URLSearchParams({ startDate: start_date });
+			if (account) params.set("acc", account);
 			if (end_date) params.set("endDate", end_date);
 			if (limit) params.set("limit", String(limit));
 			const res = await fetch(`https://acp.privatbank.ua/api/statements/transactions?${params.toString()}`, {
