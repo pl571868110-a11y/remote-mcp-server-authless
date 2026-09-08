@@ -160,6 +160,64 @@ function createServer() {
 			return { content: [{ type: "text", text: `HTTP статус: ${res.status}\n\n${text.slice(0, 3000)}` }] };
 		},
 	);
+	server.registerTool(
+		"privatbank_balance",
+		{
+			inputSchema: z.object({
+				account: z.string().describe("IBAN рахунку ПриватБанк"),
+				start_date: z.string().describe("Дата початку у форматі DD-MM-YYYY"),
+				end_date: z.string().optional().describe("Дата кінця у форматі DD-MM-YYYY (необов'язково)"),
+			}),
+		},
+		async ({ account, start_date, end_date }) => {
+			const params = new URLSearchParams({ acc: account, startDate: start_date });
+			if (end_date) params.set("endDate", end_date);
+			const res = await fetch(`https://acp.privatbank.ua/api/statements/balance?${params.toString()}`, {
+				headers: {
+					"token": currentEnv.PRIVATBANK_TOKEN,
+					"User-Agent": "PetsChoiceMCP/1.0",
+					"Content-Type": "application/json;charset=utf8",
+				},
+			});
+			const data: any = await res.json();
+			return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+		},
+	);
+	server.registerTool(
+		"privatbank_transactions",
+		{
+			inputSchema: z.object({
+				account: z.string().describe("IBAN рахунку ПриватБанк"),
+				start_date: z.string().describe("Дата початку у форматі DD-MM-YYYY"),
+				end_date: z.string().optional().describe("Дата кінця у форматі DD-MM-YYYY (необов'язково)"),
+				limit: z.number().optional().describe("Кількість записів, макс 500, рекомендовано до 100"),
+			}),
+		},
+		async ({ account, start_date, end_date, limit }) => {
+			const params = new URLSearchParams({ acc: account, startDate: start_date });
+			if (end_date) params.set("endDate", end_date);
+			if (limit) params.set("limit", String(limit));
+			const res = await fetch(`https://acp.privatbank.ua/api/statements/transactions?${params.toString()}`, {
+				headers: {
+					"token": currentEnv.PRIVATBANK_TOKEN,
+					"User-Agent": "PetsChoiceMCP/1.0",
+					"Content-Type": "application/json;charset=utf8",
+				},
+			});
+			const data: any = await res.json();
+			const transactions = (data.transactions || []).map((t: any) => ({
+				date: t.DAT_OD,
+				time: t.TIM_P,
+				amount: t.SUM,
+				currency: t.CCY,
+				direction: t.TRANTYPE === "C" ? "надходження" : "списання",
+				counterparty: t.AUT_CNTR_NAM,
+				purpose: t.OSND,
+				status: t.PR_PR,
+			}));
+			return { content: [{ type: "text", text: JSON.stringify({ status: data.status, transactions, existNextPage: data.exist_next_page, nextPageId: data.next_page_id }, null, 2) }] };
+		},
+	);
 	return server;
 }
 
