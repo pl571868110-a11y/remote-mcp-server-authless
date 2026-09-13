@@ -20,7 +20,7 @@ This register records:
    currently missing, and that **block** any drawing, quantity, or budget
    figure from being treated as project data.
 
-Until every item in Section 3 is closed (status changed from OPEN to
+Until every item in Section 4 is closed (status changed from OPEN to
 CLOSED, with the closing document referenced), **no geometry, reinforcement
 quantity, concrete quantity, budget figure, or KZh-numbered drawing may be
 issued, quoted from, procured against, or built from.** This applies
@@ -52,18 +52,46 @@ relied on. None of them, alone or combined, constitute a structural design.
 
 ---
 
-## 3. Open issues register (BLOCKING)
+## 3. Owner / responsibility matrix (roles only — names assigned once contractors/professionals are selected)
 
-| # | Open issue | Why it blocks the design | Owner | Status | Closing document |
+Six roles are used throughout this register and the rest of the handover
+package. No individual names are recorded until each role is actually
+filled; this matrix and the Owner column in Section 4 are updated with
+names at that point, not before.
+
+| Role | Definition for this project |
+|---|---|
+| Client | Property owner / party commissioning the shelter |
+| Structural Engineer | Licensed structural engineer who will assign the protection class, run calculations, and issue IFC drawings |
+| Geotechnical Engineer | Licensed professional performing the geotechnical investigation (Doc.03) |
+| Surveyor | Licensed professional performing the site/topographic survey (Doc.05) |
+| Supplier | Door, emergency-hatch, ventilation, and concrete suppliers responding to Doc.04 |
+| Contractor | Building contractor — not yet engaged; reserved for the construction phase once IFC drawings exist |
+
+| Document | Primary owner (role) | Also involves |
+|---|---|---|
+| 01 — This register | Structural Engineer | Client |
+| 02 — Engineer Handover Sheet | Client | Structural Engineer |
+| 03 — Geotechnical Investigation Brief | Client | Geotechnical Engineer |
+| 04 — Supplier Data Request Package | Client | Supplier |
+| 05 — Site/Topographic Survey Brief | Client | Surveyor |
+| Reference KZh package (frozen, superseded) | — none — | not applicable |
+| Future: IFC drawings & calculation package | Structural Engineer | Contractor (recipient, once issued) |
+
+---
+
+## 4. Open issues register (BLOCKING)
+
+| # | Open issue | Why it blocks the design | Owner (role) | Status | Closing document |
 |---|---|---|---|---|---|
-| OI-01 | Geotechnical investigation not performed (soil profile, groundwater level, unit weight, friction angle, bearing capacity, aggressivity) | Governs bearing design, lateral earth pressure, uplift/UPL check, and waterproofing detailing | Client → geotechnical contractor | **OPEN** | Geotechnical investigation report (commissioned via Doc.03) |
-| OI-02 | Site / topographic survey not performed (existing ground level, boundaries, neighboring foundations and utilities, access constraints) | Governs excavation depth, setbacks, and buildability | Client → surveyor | **OPEN** | Topographic survey report (commissioned via Doc.05) |
-| OI-03 | Design/surcharge loading not defined (vehicle access, snow, future landscaping/canopy over the structure) | Required input to slab and wall design loads | Client / engineer | **OPEN** | Loading brief from licensed engineer |
-| OI-04 | Protection class of the civil shelter not assigned | Governs wall/slab thickness, door class, ventilation filtration requirements, and applicable code clauses | Licensed engineer (with client) | **OPEN** | Protection-class determination memo |
-| OI-05 | Structural calculations not performed (walls, slabs, uplift/UPL check, lateral earth pressure, opening reinforcement) | This is the core structural design — nothing here has been calculated to a verifiable standard | Licensed structural engineer | **OPEN** | Calculation package + issued-for-construction (IFC) drawings |
-| OI-06 | Door, emergency-hatch, and ventilation equipment not selected | Structural openings, embedded parts, and penetrations cannot be finalized without supplier dimensional/technical data | Client → suppliers | **OPEN** | Supplier datasheets (requested via Doc.04) |
-| OI-07 | Concrete mix design and supplier not confirmed | W/F class, admixtures (for the "white box" concept), and pumpability depend on an actual mix design from a plant | Client → concrete supplier | **OPEN** | Concrete mix design + supplier confirmation (requested via Doc.04) |
-| OI-08 | Applicable current code edition not confirmed (ДБН/ДСТУ and civil-defense shelter requirements) | Design must cite the code editions in force at the time of the calculation, confirmed by the licensed engineer | Licensed engineer | **OPEN** | Reference list in calculation package |
+| OI-01 | Geotechnical investigation not performed (soil profile, groundwater level, unit weight, friction angle, bearing capacity, aggressivity) | Governs bearing design, lateral earth pressure, uplift/UPL check, and waterproofing detailing | Client, Geotechnical Engineer | **OPEN** | Geotechnical investigation report (commissioned via Doc.03) |
+| OI-02 | Site / topographic survey not performed (existing ground level, boundaries, neighboring foundations and utilities, access constraints) | Governs excavation depth, setbacks, and buildability | Client, Surveyor | **OPEN** | Topographic survey report (commissioned via Doc.05) |
+| OI-03 | Design/surcharge loading not defined (vehicle access, snow, future landscaping/canopy over the structure) | Required input to slab and wall design loads | Structural Engineer | **OPEN** | Loading brief from licensed engineer |
+| OI-04 | Protection class of the civil shelter not assigned | Governs wall/slab thickness, door class, ventilation filtration requirements, and applicable code clauses | Structural Engineer | **OPEN** | Protection-class determination memo |
+| OI-05 | Structural calculations not performed (walls, slabs, uplift/UPL check, lateral earth pressure, opening reinforcement) | This is the core structural design — nothing here has been calculated to a verifiable standard | Structural Engineer | **OPEN** | Calculation package + issued-for-construction (IFC) drawings |
+| OI-06 | Door, emergency-hatch, and ventilation equipment not selected | Structural openings, embedded parts, and penetrations cannot be finalized without supplier dimensional/technical data | Client, Supplier | **OPEN** | Supplier datasheets (requested via Doc.04) |
+| OI-07 | Concrete mix design and supplier not confirmed | W/F class, admixtures (for the "white box" concept), and pumpability depend on an actual mix design from a plant | Client, Supplier | **OPEN** | Concrete mix design + supplier confirmation (requested via Doc.04) |
+| OI-08 | Applicable current code edition not confirmed (ДБН/ДСТУ and civil-defense shelter requirements) | Design must cite the code editions in force at the time of the calculation, confirmed by the licensed engineer | Structural Engineer | **OPEN** | Reference list in calculation package |
 
 **Rule:** an item may only move to CLOSED when the named closing document
 exists and is referenced here by date and author. No item may be closed by
@@ -72,15 +100,15 @@ this or any other AI-generated output.
 
 ---
 
-## 4. Revision history
+## 5. Revision history
 
 | Rev | Date | Change | Author |
 |---|---|---|---|
-| 01 | 13.09.2026 | First issue. Freezes prior reference-concept package (geometry, quantities, budgets, KZh-0…KZh-17) pending closure of OI-01…OI-08. | Assembled per client instruction |
+| 01 | 13.09.2026 | First issue. Freezes prior reference-concept package (geometry, quantities, budgets, KZh-0…KZh-17) pending closure of OI-01…OI-08. Owner/responsibility matrix added (roles only). | Assembled per client instruction |
 
 ---
 
-## 5. Explicit exclusions (per client instruction, Rev.01)
+## 6. Explicit exclusions (per client instruction, Rev.01)
 
 The following are **out of scope** for this register and for every other
 document in the handover package, and must not be produced until OI-01…OI-08

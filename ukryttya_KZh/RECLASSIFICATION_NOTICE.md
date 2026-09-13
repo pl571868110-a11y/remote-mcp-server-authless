@@ -30,6 +30,9 @@ Concretely, this means:
 - None of the above files have been regenerated or revised as part of this
   reclassification — they are left as-is, only their **status** changes.
 
+**In case of any conflict between the reference KZh package and the
+handover documents, the handover documents and Rev.01 register govern.**
+
 **What supersedes them going forward** is the handover package in
 `handover/`:
 
