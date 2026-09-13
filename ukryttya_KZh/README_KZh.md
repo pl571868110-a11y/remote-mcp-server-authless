@@ -1,12 +1,20 @@
-# Черновой инженерный комплект КЖ — подземное укрытие 4,0×3,0 м (Русановские сады, Киев)
+# [RECLASSIFIED, 13.09.2026] Reference concept package — подземное укрытие 4,0×3,0 м (Русановские сады, Киев)
 
-> **Черновой инженерный комплект. Не является рабочим КЖ-проектом и не предназначен
-> для выполнения строительных работ без проверки, корректировки и выпуска
-> лицензированным инженером-конструктором.**
+> ## REFERENCE CONCEPT ONLY — NOT FOR DESIGN, PROCUREMENT OR CONSTRUCTION
+>
+> Per `RECLASSIFICATION_NOTICE.md` and the **Design Basis & Open Issues
+> Register Rev.01** (`handover/01_Design_Basis_and_Open_Issues_Register_Rev01.md`),
+> everything below — including all dimensions, reinforcement quantities,
+> concrete volumes, budget figures, and the KZh-0…KZh-17 drawings — is
+> **frozen** and does not constitute project data. None of it may be
+> issued, quoted, procured against, or built from. See the handover
+> package in `handover/` for the documents that now govern next steps.
 
-Дата: 12.09.2026. Комплект сформирован автоматически (Python: matplotlib, openpyxl)
-по исходным данным, приведённым в задании, без проведения инженерно-геологических
-изысканий и без назначения класса защитного сооружения.
+Дата: 12.09.2026 (исходное составление; статус изменён 13.09.2026). Комплект
+сформирован автоматически (Python: matplotlib, openpyxl) по исходным данным,
+приведённым в задании, без проведения инженерно-геологических изысканий и без
+назначения класса защитного сооружения. Все числа ниже приводятся только как
+**исторический черновой материал**, а не как проектные величины.
 
 ---
 
