@@ -167,7 +167,7 @@ async function ga4RunReport(body: Record<string, unknown>) {
 function createGoogleServer() {
 	const server = new McpServer({
 		name: "PetsChoice Google Connector",
-		version: "1.1.1",
+		version: "1.2.0",
 	});
 
 	server.registerTool(
@@ -291,6 +291,55 @@ function createGoogleServer() {
 					],
 				});
 				return jsonText({ property_id: GA4_PROPERTY_ID, start_date, end_date, data });
+			} catch (error: any) {
+				return jsonText({ error: error?.message || String(error) }, true);
+			}
+		},
+	);
+
+	server.registerTool(
+		"ga4_event_report",
+		{
+			description: "Read-only diagnostic GA4 ecommerce event report for begin_checkout, add_payment_info and purchase, including event counts, transactions and purchase revenue.",
+			inputSchema: z.object({
+				start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+				end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+			}),
+		},
+		async ({ start_date, end_date }) => {
+			try {
+				const finalEndDate = end_date || start_date;
+				const data = await ga4RunReport({
+					dateRanges: [{ startDate: start_date, endDate: finalEndDate }],
+					dimensions: [
+						{ name: "date" },
+						{ name: "eventName" },
+					],
+					metrics: [
+						{ name: "eventCount" },
+						{ name: "transactions" },
+						{ name: "purchaseRevenue" },
+					],
+					dimensionFilter: {
+						filter: {
+							fieldName: "eventName",
+							inListFilter: {
+								values: ["begin_checkout", "add_payment_info", "purchase"],
+								caseSensitive: true,
+							},
+						},
+					},
+					orderBys: [
+						{ dimension: { dimensionName: "date" } },
+						{ dimension: { dimensionName: "eventName" } },
+					],
+				});
+				return jsonText({
+					property_id: GA4_PROPERTY_ID,
+					start_date,
+					end_date: finalEndDate,
+					data,
+				});
 			} catch (error: any) {
 				return jsonText({ error: error?.message || String(error) }, true);
 			}
