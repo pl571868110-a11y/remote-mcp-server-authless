@@ -114,6 +114,20 @@ async function getAccessToken(): Promise<string> {
 	return data.access_token as string;
 }
 
+async function readJsonResponse(res: Response, label: string): Promise<any> {
+	const raw = await res.text();
+	let data: any;
+	try {
+		data = raw ? JSON.parse(raw) : {};
+	} catch {
+		throw new Error(
+			`${label} ${res.status} returned non-JSON (${res.headers.get("content-type") || "unknown content-type"}): ${raw.slice(0, 500)}`,
+		);
+	}
+	if (!res.ok) throw new Error(`${label} ${res.status}: ${JSON.stringify(data)}`);
+	return data;
+}
+
 async function googleAdsSearch(query: string) {
 	const token = await getAccessToken();
 	const headers: Record<string, string> = {
@@ -131,15 +145,29 @@ async function googleAdsSearch(query: string) {
 			body: JSON.stringify({ query }),
 		},
 	);
-	const data = await res.json();
-	if (!res.ok) throw new Error(`Google Ads API ${res.status}: ${JSON.stringify(data)}`);
-	return data;
+	return readJsonResponse(res, "Google Ads API");
+}
+
+async function ga4RunReport(body: Record<string, unknown>) {
+	const token = await getAccessToken();
+	const res = await fetch(
+		`https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
+		{
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${token}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(body),
+		},
+	);
+	return readJsonResponse(res, "GA4 Data API");
 }
 
 function createGoogleServer() {
 	const server = new McpServer({
 		name: "PetsChoice Google Connector",
-		version: "1.0.0",
+		version: "1.1.0",
 	});
 
 	server.registerTool(
@@ -202,7 +230,7 @@ function createGoogleServer() {
 	server.registerTool(
 		"ga4_purchase_report",
 		{
-			description: "Read GA4 purchase and revenue metrics from the whitelisted PetsChoice Poland GA4 property.",
+			description: "Read GA4 sessions, transactions and purchase revenue by date from the whitelisted PetsChoice Poland GA4 property.",
 			inputSchema: z.object({
 				start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 				end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -210,35 +238,87 @@ function createGoogleServer() {
 		},
 		async ({ start_date, end_date }) => {
 			try {
-				const token = await getAccessToken();
-				const res = await fetch(
-					`https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
-					{
-						method: "POST",
-						headers: {
-							Authorization: `Bearer ${token}`,
-							"Content-Type": "application/json",
+				const data = await ga4RunReport({
+					dateRanges: [{ startDate: start_date, endDate: end_date }],
+					dimensions: [{ name: "date" }],
+					metrics: [
+						{ name: "sessions" },
+						{ name: "transactions" },
+						{ name: "purchaseRevenue" },
+					],
+					orderBys: [{ dimension: { dimensionName: "date" } }],
+				});
+				return jsonText({ property_id: GA4_PROPERTY_ID, start_date, end_date, data });
+			} catch (error: any) {
+				return jsonText({ error: error?.message || String(error) }, true);
+			}
+		},
+	);
+
+	server.registerTool(
+		"ga4_purchase_transactions",
+		{
+			description: "Diagnostic read-only GA4 report showing purchase transaction IDs, dates, transaction count and purchase revenue. Use it to reconcile GA4 purchases with Shopify orders.",
+			inputSchema: z.object({
+				start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+				end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+			}),
+		},
+		async ({ start_date, end_date }) => {
+			try {
+				const data = await ga4RunReport({
+					dateRanges: [{ startDate: start_date, endDate: end_date }],
+					dimensions: [
+						{ name: "date" },
+						{ name: "transactionId" },
+					],
+					metrics: [
+						{ name: "transactions" },
+						{ name: "purchaseRevenue" },
+					],
+					dimensionFilter: {
+						filter: {
+							fieldName: "transactionId",
+							stringFilter: {
+								matchType: "EXACT",
+								value: "(not set)",
+								caseSensitive: false,
+							},
 						},
-						body: JSON.stringify({
-							dateRanges: [{ startDate: start_date, endDate: end_date }],
-							dimensions: [{ name: "date" }],
-							metrics: [
-								{ name: "sessions" },
-								{ name: "transactions" },
-								{ name: "purchaseRevenue" },
-							],
-							orderBys: [{ dimension: { dimensionName: "date" } }],
-						}),
 					},
-				);
-				const raw = await res.text();
-				let data: any;
-				try {
-					data = raw ? JSON.parse(raw) : {};
-				} catch {
-					throw new Error(`GA4 Data API ${res.status} returned non-JSON (${res.headers.get("content-type") || "unknown content-type"}): ${raw.slice(0, 500)}`);
+					orderBys: [
+						{ dimension: { dimensionName: "date" } },
+						{ dimension: { dimensionName: "transactionId" } },
+					],
+				});
+
+				// GA4 reports transactionId="(not set)" for non-purchase rows. The filter above
+				// intentionally isolates that state for diagnostics only if it exists. If GA4
+				// returns no rows, run an unfiltered report to get actual transaction IDs.
+				if (!data?.rows?.length) {
+					const unfiltered = await ga4RunReport({
+						dateRanges: [{ startDate: start_date, endDate: end_date }],
+						dimensions: [
+							{ name: "date" },
+							{ name: "transactionId" },
+						],
+						metrics: [
+							{ name: "transactions" },
+							{ name: "purchaseRevenue" },
+						],
+						orderBys: [
+							{ dimension: { dimensionName: "date" } },
+							{ dimension: { dimensionName: "transactionId" } },
+						],
+					});
+					return jsonText({
+						property_id: GA4_PROPERTY_ID,
+						start_date,
+						end_date,
+						data: unfiltered,
+					});
 				}
-				if (!res.ok) throw new Error(`GA4 Data API ${res.status}: ${JSON.stringify(data)}`);
+
 				return jsonText({ property_id: GA4_PROPERTY_ID, start_date, end_date, data });
 			} catch (error: any) {
 				return jsonText({ error: error?.message || String(error) }, true);
@@ -261,8 +341,7 @@ function createGoogleServer() {
 					`https://merchantapi.googleapis.com/products/v1/accounts/${MERCHANT_ACCOUNT_ID}/products?pageSize=${page_size}`,
 					{ headers: { Authorization: `Bearer ${token}` } },
 				);
-				const data = await res.json();
-				if (!res.ok) throw new Error(`Merchant API ${res.status}: ${JSON.stringify(data)}`);
+				const data = await readJsonResponse(res, "Merchant API");
 				return jsonText({ merchant_account_id: MERCHANT_ACCOUNT_ID, data });
 			} catch (error: any) {
 				return jsonText({ error: error?.message || String(error) }, true);
