@@ -1,5 +1,6 @@
 import legacyWorker from "./index";
 import { handleGoogleRequest } from "./google";
+import { handleGoogleDiagnosticsRequest } from "./google-diagnostics";
 import { handleShopifyRequest } from "./shopify-pl";
 import { handleShopifyUaRequest } from "./shopify-ua";
 
@@ -11,6 +12,9 @@ export default {
 	): Promise<Response> {
 		const googleResponse = await handleGoogleRequest(request, env, ctx);
 		if (googleResponse) return googleResponse;
+
+		const googleDiagnosticsResponse = await handleGoogleDiagnosticsRequest(request, env, ctx);
+		if (googleDiagnosticsResponse) return googleDiagnosticsResponse;
 
 		const shopifyResponse = await handleShopifyRequest(request, env, ctx);
 		if (shopifyResponse) return shopifyResponse;
