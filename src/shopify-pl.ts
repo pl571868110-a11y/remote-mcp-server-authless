@@ -6,7 +6,6 @@ type ShopifyEnv = Env & {
 	SHOPIFY_PL_SHOP?: string;
 	SHOPIFY_PL_CLIENT_ID?: string;
 	SHOPIFY_PL_CLIENT_SECRET?: string;
-	SHOPIFY_PL_ADMIN_TOKEN?: string;
 };
 
 let currentEnv: ShopifyEnv;
@@ -29,7 +28,6 @@ function normalizedShopDomain(raw: string): string {
 }
 
 async function getShopifyAccessToken(): Promise<string> {
-	if (currentEnv.SHOPIFY_PL_ADMIN_TOKEN) return currentEnv.SHOPIFY_PL_ADMIN_TOKEN;
 	if (!currentEnv.SHOPIFY_PL_SHOP || !currentEnv.SHOPIFY_PL_CLIENT_ID || !currentEnv.SHOPIFY_PL_CLIENT_SECRET) {
 		throw new Error(
 			"SHOPIFY_PL_SHOP / SHOPIFY_PL_CLIENT_ID / SHOPIFY_PL_CLIENT_SECRET are not configured in Cloudflare Worker secrets",
@@ -100,7 +98,7 @@ async function shopifyGraphql(query: string, variables: Record<string, unknown> 
 function createShopifyServer() {
 	const server = new McpServer({
 		name: "PetsChoice Shopify Poland Connector",
-		version: "1.1.0",
+		version: "1.1.1",
 	});
 
 	server.registerTool(
