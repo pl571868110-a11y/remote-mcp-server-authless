@@ -4,10 +4,13 @@ import { z } from "zod";
 
 type ShopifyEnv = Env & {
 	SHOPIFY_PL_SHOP?: string;
+	SHOPIFY_PL_CLIENT_ID?: string;
+	SHOPIFY_PL_CLIENT_SECRET?: string;
 	SHOPIFY_PL_ADMIN_TOKEN?: string;
 };
 
 let currentEnv: ShopifyEnv;
+let cachedAccessToken: { token: string; expiresAt: number } | null = null;
 
 function jsonText(data: unknown, isError = false) {
 	return {
@@ -17,26 +20,65 @@ function jsonText(data: unknown, isError = false) {
 }
 
 function normalizedShopDomain(raw: string): string {
-	const value = raw.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+	let value = raw.trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+	if (!value.includes(".")) value = `${value}.myshopify.com`;
 	if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/i.test(value)) {
-		throw new Error("SHOPIFY_PL_SHOP must be the store's *.myshopify.com domain");
+		throw new Error("SHOPIFY_PL_SHOP must be the store's myshopify subdomain or *.myshopify.com domain");
 	}
 	return value;
 }
 
-async function shopifyGraphql(query: string, variables: Record<string, unknown> = {}) {
-	if (!currentEnv.SHOPIFY_PL_SHOP || !currentEnv.SHOPIFY_PL_ADMIN_TOKEN) {
+async function getShopifyAccessToken(): Promise<string> {
+	if (currentEnv.SHOPIFY_PL_ADMIN_TOKEN) return currentEnv.SHOPIFY_PL_ADMIN_TOKEN;
+	if (!currentEnv.SHOPIFY_PL_SHOP || !currentEnv.SHOPIFY_PL_CLIENT_ID || !currentEnv.SHOPIFY_PL_CLIENT_SECRET) {
 		throw new Error(
-			"SHOPIFY_PL_SHOP / SHOPIFY_PL_ADMIN_TOKEN are not configured in Cloudflare Worker secrets",
+			"SHOPIFY_PL_SHOP / SHOPIFY_PL_CLIENT_ID / SHOPIFY_PL_CLIENT_SECRET are not configured in Cloudflare Worker secrets",
 		);
+	}
+	if (cachedAccessToken && Date.now() < cachedAccessToken.expiresAt - 5 * 60 * 1000) {
+		return cachedAccessToken.token;
 	}
 
 	const shop = normalizedShopDomain(currentEnv.SHOPIFY_PL_SHOP);
+	const body = new URLSearchParams({
+		grant_type: "client_credentials",
+		client_id: currentEnv.SHOPIFY_PL_CLIENT_ID,
+		client_secret: currentEnv.SHOPIFY_PL_CLIENT_SECRET,
+	});
+	const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
+		method: "POST",
+		headers: { "Content-Type": "application/x-www-form-urlencoded" },
+		body,
+	});
+	const raw = await res.text();
+	let data: any;
+	try {
+		data = raw ? JSON.parse(raw) : {};
+	} catch {
+		throw new Error(`Shopify token endpoint ${res.status} returned non-JSON: ${raw.slice(0, 300)}`);
+	}
+	if (!res.ok || !data.access_token) {
+		throw new Error(`Shopify token exchange failed (${res.status}): ${JSON.stringify(data)}`);
+	}
+	const expiresIn = Number(data.expires_in || 86400);
+	cachedAccessToken = {
+		token: String(data.access_token),
+		expiresAt: Date.now() + expiresIn * 1000,
+	};
+	return cachedAccessToken.token;
+}
+
+async function shopifyGraphql(query: string, variables: Record<string, unknown> = {}) {
+	if (!currentEnv.SHOPIFY_PL_SHOP) {
+		throw new Error("SHOPIFY_PL_SHOP is not configured in Cloudflare Worker secrets");
+	}
+	const shop = normalizedShopDomain(currentEnv.SHOPIFY_PL_SHOP);
+	const token = await getShopifyAccessToken();
 	const res = await fetch(`https://${shop}/admin/api/2026-07/graphql.json`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
-			"X-Shopify-Access-Token": currentEnv.SHOPIFY_PL_ADMIN_TOKEN,
+			"X-Shopify-Access-Token": token,
 		},
 		body: JSON.stringify({ query, variables }),
 	});
@@ -58,7 +100,7 @@ async function shopifyGraphql(query: string, variables: Record<string, unknown> 
 function createShopifyServer() {
 	const server = new McpServer({
 		name: "PetsChoice Shopify Poland Connector",
-		version: "1.0.0",
+		version: "1.1.0",
 	});
 
 	server.registerTool(
@@ -90,9 +132,7 @@ function createShopifyServer() {
 		"shopify_pl_order_by_id",
 		{
 			description: "Read a Shopify Poland order by numeric Shopify order ID or full gid. Read-only.",
-			inputSchema: z.object({
-				order_id: z.string().min(1),
-			}),
+			inputSchema: z.object({ order_id: z.string().min(1) }),
 		},
 		async ({ order_id }) => {
 			try {
@@ -102,14 +142,8 @@ function createShopifyServer() {
 				const data = await shopifyGraphql(
 					`query OrderById($id: ID!) {
 						order(id: $id) {
-							id
-							name
-							createdAt
-							processedAt
-							currencyCode
-							displayFinancialStatus
-							displayFulfillmentStatus
-							test
+							id name createdAt processedAt currencyCode
+							displayFinancialStatus displayFulfillmentStatus test
 							totalPriceSet { shopMoney { amount currencyCode } }
 							currentTotalPriceSet { shopMoney { amount currencyCode } }
 							totalRefundedSet { shopMoney { amount currencyCode } }
@@ -144,14 +178,8 @@ function createShopifyServer() {
 					`query OrdersBetween($query: String!) {
 						orders(first: 100, query: $query, sortKey: CREATED_AT) {
 							nodes {
-								id
-								name
-								createdAt
-								processedAt
-								currencyCode
-								displayFinancialStatus
-								displayFulfillmentStatus
-								test
+								id name createdAt processedAt currencyCode
+								displayFinancialStatus displayFulfillmentStatus test
 								totalPriceSet { shopMoney { amount currencyCode } }
 								currentTotalPriceSet { shopMoney { amount currencyCode } }
 							}
