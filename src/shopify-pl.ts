@@ -98,7 +98,7 @@ async function shopifyGraphql(query: string, variables: Record<string, unknown> 
 function createShopifyServer() {
 	const server = new McpServer({
 		name: "PetsChoice Shopify Poland Connector",
-		version: "1.1.1",
+		version: "1.1.2",
 	});
 
 	server.registerTool(
@@ -129,7 +129,7 @@ function createShopifyServer() {
 	server.registerTool(
 		"shopify_pl_order_by_id",
 		{
-			description: "Read a Shopify Poland order by numeric Shopify order ID or full gid. Read-only.",
+			description: "Read a Shopify Poland order by numeric Shopify order ID or full gid. Read-only; does not request customer PII.",
 			inputSchema: z.object({ order_id: z.string().min(1) }),
 		},
 		async ({ order_id }) => {
@@ -145,7 +145,6 @@ function createShopifyServer() {
 							totalPriceSet { shopMoney { amount currencyCode } }
 							currentTotalPriceSet { shopMoney { amount currencyCode } }
 							totalRefundedSet { shopMoney { amount currencyCode } }
-							customer { displayName email }
 							lineItems(first: 50) {
 								nodes { title quantity sku originalUnitPriceSet { shopMoney { amount currencyCode } } }
 							}
