@@ -167,7 +167,7 @@ async function ga4RunReport(body: Record<string, unknown>) {
 function createGoogleServer() {
 	const server = new McpServer({
 		name: "PetsChoice Google Connector",
-		version: "1.1.0",
+		version: "1.1.1",
 	});
 
 	server.registerTool(
@@ -276,13 +276,12 @@ function createGoogleServer() {
 						{ name: "transactions" },
 						{ name: "purchaseRevenue" },
 					],
-					dimensionFilter: {
+					metricFilter: {
 						filter: {
-							fieldName: "transactionId",
-							stringFilter: {
-								matchType: "EXACT",
-								value: "(not set)",
-								caseSensitive: false,
+							fieldName: "transactions",
+							numericFilter: {
+								operation: "GREATER_THAN",
+								value: { int64Value: "0" },
 							},
 						},
 					},
@@ -291,34 +290,6 @@ function createGoogleServer() {
 						{ dimension: { dimensionName: "transactionId" } },
 					],
 				});
-
-				// GA4 reports transactionId="(not set)" for non-purchase rows. The filter above
-				// intentionally isolates that state for diagnostics only if it exists. If GA4
-				// returns no rows, run an unfiltered report to get actual transaction IDs.
-				if (!data?.rows?.length) {
-					const unfiltered = await ga4RunReport({
-						dateRanges: [{ startDate: start_date, endDate: end_date }],
-						dimensions: [
-							{ name: "date" },
-							{ name: "transactionId" },
-						],
-						metrics: [
-							{ name: "transactions" },
-							{ name: "purchaseRevenue" },
-						],
-						orderBys: [
-							{ dimension: { dimensionName: "date" } },
-							{ dimension: { dimensionName: "transactionId" } },
-						],
-					});
-					return jsonText({
-						property_id: GA4_PROPERTY_ID,
-						start_date,
-						end_date,
-						data: unfiltered,
-					});
-				}
-
 				return jsonText({ property_id: GA4_PROPERTY_ID, start_date, end_date, data });
 			} catch (error: any) {
 				return jsonText({ error: error?.message || String(error) }, true);
