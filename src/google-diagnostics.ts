@@ -71,7 +71,7 @@ async function ga4RunReport(body: Record<string, unknown>) {
 function createGoogleDiagnosticsServer() {
 	const server = new McpServer({
 		name: "PetsChoice Google Diagnostics",
-		version: "1.0.0",
+		version: "1.1.0",
 	});
 
 	server.registerTool(
@@ -112,6 +112,62 @@ function createGoogleDiagnosticsServer() {
 					limit: "1000",
 				});
 				return jsonText({ property_id: GA4_PROPERTY_ID, date, data });
+			} catch (error: any) {
+				return jsonText({ error: error?.message || String(error) }, true);
+			}
+		},
+	);
+
+	server.registerTool(
+		"ga4_event_hour",
+		{
+			description: "Read-only GA4 diagnostic showing ALL event names recorded during one property-local hour. Use this to see whether a Shopify order had any analytics trail even when checkout/purchase events are missing.",
+			inputSchema: z.object({
+				date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+				hour: z.number().int().min(0).max(23),
+			}),
+		},
+		async ({ date, hour }) => {
+			try {
+				const compactDate = date.replace(/-/g, "");
+				const hourText = String(hour).padStart(2, "0");
+				const prefix = `${compactDate}${hourText}`;
+				const data = await ga4RunReport({
+					dateRanges: [{ startDate: date, endDate: date }],
+					dimensions: [
+						{ name: "dateHourMinute" },
+						{ name: "eventName" },
+						{ name: "transactionId" },
+					],
+					metrics: [
+						{ name: "eventCount" },
+						{ name: "totalUsers" },
+						{ name: "transactions" },
+						{ name: "purchaseRevenue" },
+					],
+					dimensionFilter: {
+						filter: {
+							fieldName: "dateHourMinute",
+							stringFilter: {
+								matchType: "BEGINS_WITH",
+								value: prefix,
+								caseSensitive: true,
+							},
+						},
+					},
+					orderBys: [
+						{ dimension: { dimensionName: "dateHourMinute" } },
+						{ dimension: { dimensionName: "eventName" } },
+					],
+					limit: "5000",
+				});
+				return jsonText({
+					property_id: GA4_PROPERTY_ID,
+					date,
+					hour,
+					note: "dateHourMinute is reported in the GA4 property's local timezone",
+					data,
+				});
 			} catch (error: any) {
 				return jsonText({ error: error?.message || String(error) }, true);
 			}
