@@ -1,6 +1,7 @@
 import legacyWorker from "./index";
 import { handleGoogleRequest } from "./google";
 import { handleShopifyRequest } from "./shopify-pl";
+import { handleShopifyUaRequest } from "./shopify-ua";
 
 export default {
 	async fetch(
@@ -13,6 +14,9 @@ export default {
 
 		const shopifyResponse = await handleShopifyRequest(request, env, ctx);
 		if (shopifyResponse) return shopifyResponse;
+
+		const shopifyUaResponse = await handleShopifyUaRequest(request, env, ctx);
+		if (shopifyUaResponse) return shopifyUaResponse;
 
 		return legacyWorker.fetch(request, env, ctx);
 	},
