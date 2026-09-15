@@ -212,7 +212,7 @@ function createGoogleServer() {
 			try {
 				const token = await getAccessToken();
 				const res = await fetch(
-					`https://analyticsdata.googleapis.com/v1/properties/${GA4_PROPERTY_ID}:runReport`,
+					`https://analyticsdata.googleapis.com/v1beta/properties/${GA4_PROPERTY_ID}:runReport`,
 					{
 						method: "POST",
 						headers: {
@@ -231,7 +231,13 @@ function createGoogleServer() {
 						}),
 					},
 				);
-				const data = await res.json();
+				const raw = await res.text();
+				let data: any;
+				try {
+					data = raw ? JSON.parse(raw) : {};
+				} catch {
+					throw new Error(`GA4 Data API ${res.status} returned non-JSON (${res.headers.get("content-type") || "unknown content-type"}): ${raw.slice(0, 500)}`);
+				}
 				if (!res.ok) throw new Error(`GA4 Data API ${res.status}: ${JSON.stringify(data)}`);
 				return jsonText({ property_id: GA4_PROPERTY_ID, start_date, end_date, data });
 			} catch (error: any) {
