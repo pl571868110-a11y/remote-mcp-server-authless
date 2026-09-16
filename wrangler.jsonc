@@ -9,6 +9,13 @@
 	"compatibility_date": "2026-07-02",
 	"compatibility_flags": ["nodejs_compat"],
 	"keep_vars": true,
+	"d1_databases": [
+		{
+			"binding": "META_REVIEW_DB",
+			"database_name": "pcc-meta-reviewer",
+			"database_id": "2e906996-8722-42a7-8dd6-266fe5df2644"
+		}
+	],
 	"triggers": {
 		"crons": [
 			"0 18 * * 0",
