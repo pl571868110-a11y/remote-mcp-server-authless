@@ -3,12 +3,14 @@ export {};
 declare global {
 	interface Env {
 		ANTHROPIC_API_KEY?: string;
-		MONOBANK_TOKEN?: string;
+		// Legacy banking tools in src/index.ts use these headers directly and
+		// therefore require the bindings at runtime.
+		MONOBANK_TOKEN: string;
 		NOVAPOSHTA_API_KEY?: string;
 		NOVAPAY_REFRESH_TOKEN?: string;
 		NOVAPAY_LOGIN?: string;
 		NOVAPAY_PUBLIC_CERTIFICATE?: string;
-		PRIVATBANK_TOKEN?: string;
+		PRIVATBANK_TOKEN: string;
 
 		// Existing Shopify UA connector credentials.
 		SHOPIFY_SHOP?: string;
