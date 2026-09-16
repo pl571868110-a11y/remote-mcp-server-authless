@@ -87,8 +87,43 @@ async function shopifyGraphql(query: string, variables: Record<string, unknown> 
 	return data.data;
 }
 
+function addDays(date: string, days: number): string {
+	const [year, month, day] = date.split("-").map(Number);
+	const d = new Date(Date.UTC(year, month - 1, day + days));
+	return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function localMidnightUtcIso(date: string, timeZone: string): string {
+	const [year, month, day] = date.split("-").map(Number);
+	const targetAsUtc = Date.UTC(year, month - 1, day, 0, 0, 0);
+	const formatter = new Intl.DateTimeFormat("en-CA", {
+		timeZone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+		hourCycle: "h23",
+	});
+	let guess = targetAsUtc;
+	for (let i = 0; i < 3; i++) {
+		const parts = Object.fromEntries(formatter.formatToParts(new Date(guess)).map((p) => [p.type, p.value]));
+		const represented = Date.UTC(
+			Number(parts.year),
+			Number(parts.month) - 1,
+			Number(parts.day),
+			Number(parts.hour),
+			Number(parts.minute),
+			Number(parts.second),
+		);
+		guess += targetAsUtc - represented;
+	}
+	return new Date(guess).toISOString();
+}
+
 function createShopifyUaServer() {
-	const server = new McpServer({ name: "PetsChoice Shopify UA Connector", version: "1.0.0" });
+	const server = new McpServer({ name: "PetsChoice Shopify UA Connector", version: "1.1.0" });
 
 	server.registerTool(
 		"shopify_store_identity",
@@ -133,6 +168,75 @@ function createShopifyUaServer() {
 					{ query: `name:${JSON.stringify(normalized)}` },
 				);
 				return jsonText({ requested_order: order, matches: data.orders.nodes });
+			} catch (error: any) {
+				return jsonText({ error: error?.message || String(error) }, true);
+			}
+		},
+	);
+
+	server.registerTool(
+		"shopify_ua_orders_between",
+		{
+			description: "Read all Ukrainian Shopify orders created in an inclusive store-local date range. Cursor-paginated, read-only, and no customer PII.",
+			inputSchema: z.object({
+				start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+				end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+			}),
+		},
+		async ({ start_date, end_date }) => {
+			try {
+				if (start_date > end_date) throw new Error("start_date must be on or before end_date");
+
+				const identity = await shopifyGraphql(`query UaOrdersStoreContext {
+					shop { name primaryDomain { host } currencyCode ianaTimezone }
+				}`);
+				const shop = identity.shop;
+				const timeZone = String(shop.ianaTimezone || "Europe/Kyiv");
+				const startInstant = localMidnightUtcIso(start_date, timeZone);
+				const endExclusiveInstant = localMidnightUtcIso(addDays(end_date, 1), timeZone);
+				const search = `created_at:>=${startInstant} created_at:<${endExclusiveInstant}`;
+
+				const query = `query UaOrdersBetween($query: String!, $after: String) {
+					orders(first: 100, after: $after, query: $query, sortKey: CREATED_AT) {
+						nodes {
+							id name createdAt processedAt currencyCode
+							displayFinancialStatus displayFulfillmentStatus
+							cancelledAt test tags
+							totalPriceSet { shopMoney { amount currencyCode } }
+							currentTotalPriceSet { shopMoney { amount currencyCode } }
+							subtotalPriceSet { shopMoney { amount currencyCode } }
+							currentSubtotalPriceSet { shopMoney { amount currencyCode } }
+							totalDiscountsSet { shopMoney { amount currencyCode } }
+							currentTotalDiscountsSet { shopMoney { amount currencyCode } }
+							totalRefundedSet { shopMoney { amount currencyCode } }
+						}
+						pageInfo { hasNextPage endCursor }
+					}
+				}`;
+
+				const orders: any[] = [];
+				let after: string | null = null;
+				do {
+					const data = await shopifyGraphql(query, { query: search, after });
+					for (const order of data.orders.nodes) {
+						orders.push({
+							...order,
+							financialStatus: order.displayFinancialStatus,
+							fulfillmentStatus: order.displayFulfillmentStatus,
+						});
+					}
+					after = data.orders.pageInfo.hasNextPage ? data.orders.pageInfo.endCursor : null;
+					if (data.orders.pageInfo.hasNextPage && !after) throw new Error("Shopify pagination returned hasNextPage without endCursor");
+				} while (after);
+
+				return jsonText({
+					store: shop.primaryDomain?.host || shop.name || "petschoice.club",
+					currency: shop.currencyCode,
+					start_date,
+					end_date,
+					orders_count: orders.length,
+					orders,
+				});
 			} catch (error: any) {
 				return jsonText({ error: error?.message || String(error) }, true);
 			}
