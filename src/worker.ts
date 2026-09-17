@@ -3,6 +3,7 @@ import { handleGoogleRequest } from "./google";
 import { handleGoogleDiagnosticsRequest } from "./google-diagnostics";
 import { handleShopifyRequest } from "./shopify-pl";
 import { handleShopifyUaRequest } from "./shopify-ua";
+import { handleNovaPayIngestRequest } from "./novapay-ingest";
 
 export default {
 	async fetch(
@@ -10,6 +11,9 @@ export default {
 		env: Env,
 		ctx: ExecutionContext,
 	): Promise<Response> {
+		const novaPayIngestResponse = await handleNovaPayIngestRequest(request, env, ctx);
+		if (novaPayIngestResponse) return novaPayIngestResponse;
+
 		const googleResponse = await handleGoogleRequest(request, env, ctx);
 		if (googleResponse) return googleResponse;
 
