@@ -1,11 +1,11 @@
 /**
  * Preview-only Worker for PCC AI CFO / NovaPay ingest testing.
- * Does not replace the production remote-mcp-server-authless Worker.
+ * Isolated entrypoint: exposes only the protected NovaPay ingest route.
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "pcc-cfo-novapay-preview",
-	"main": "src/worker.ts",
+	"main": "src/novapay-preview.ts",
 	"compatibility_date": "2026-07-02",
 	"compatibility_flags": ["nodejs_compat"],
 	"d1_databases": [
