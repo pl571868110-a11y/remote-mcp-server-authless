@@ -11,5 +11,6 @@ declare global {
 		PRIVATBANK_TOKEN: string;
 		PCC_CFO_DB?: D1Database;
 		NOVAPAY_INGEST_TOKEN?: string;
+		SHOPIFY_UA_SERVICE?: Fetcher;
 	}
 }
