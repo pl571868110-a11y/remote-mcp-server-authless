@@ -1,5 +1,8 @@
 import { handleNovaPayIngestRequest } from "./novapay-ingest";
-import { handleNovaPayReconcileRequest } from "./novapay-reconcile";
+import {
+	handleNovaPayReconcileRequest,
+	reconcileNovaPayRegistry,
+} from "./novapay-reconcile";
 
 export default {
 	async fetch(
@@ -8,7 +11,26 @@ export default {
 		ctx: ExecutionContext,
 	): Promise<Response> {
 		const ingestResponse = await handleNovaPayIngestRequest(request, env, ctx);
-		if (ingestResponse) return ingestResponse;
+		if (ingestResponse) {
+			if (new URL(request.url).pathname === "/internal/novapay/ingest" && ingestResponse.ok) {
+				try {
+					const payload: any = await ingestResponse.clone().json();
+					if (payload?.ok === true && payload?.registry_no) {
+						ctx.waitUntil(
+							reconcileNovaPayRegistry(env, String(payload.registry_no)).catch((error) => {
+								console.error("NovaPay registry reconciliation failed", {
+									registry_no: String(payload.registry_no),
+									error: error?.message || String(error),
+								});
+							}),
+						);
+					}
+				} catch (error: any) {
+					console.error("Unable to queue NovaPay reconciliation", error?.message || String(error));
+				}
+			}
+			return ingestResponse;
+		}
 
 		const reconcileResponse = await handleNovaPayReconcileRequest(request, env, ctx);
 		if (reconcileResponse) return reconcileResponse;
