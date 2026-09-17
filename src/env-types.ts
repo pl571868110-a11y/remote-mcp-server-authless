@@ -9,5 +9,7 @@ declare global {
 		NOVAPAY_LOGIN?: string;
 		NOVAPAY_PUBLIC_CERTIFICATE?: string;
 		PRIVATBANK_TOKEN?: string;
+		PCC_CFO_DB?: D1Database;
+		NOVAPAY_INGEST_TOKEN?: string;
 	}
 }
