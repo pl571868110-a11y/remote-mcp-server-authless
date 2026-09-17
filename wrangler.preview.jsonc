@@ -1,6 +1,9 @@
 /**
- * Preview-only Worker for PCC AI CFO / NovaPay ingest testing.
- * Isolated entrypoint: exposes only the protected NovaPay ingest route.
+ * Preview-only Worker for PCC AI CFO / NovaPay testing.
+ * Exposes protected NovaPay ingest + reconciliation routes.
+ * Shopify data is obtained via an internal Cloudflare Service Binding to
+ * the existing production remote-mcp-server-authless Worker; credentials
+ * are not duplicated into this preview Worker.
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
@@ -13,6 +16,12 @@
 			"binding": "PCC_CFO_DB",
 			"database_name": "pcc-ai-cfo-ua",
 			"database_id": "aeed7e9d-2afe-48c5-a484-a7fad389198a"
+		}
+	],
+	"services": [
+		{
+			"binding": "SHOPIFY_UA_SERVICE",
+			"service": "remote-mcp-server-authless"
 		}
 	],
 	"observability": {
