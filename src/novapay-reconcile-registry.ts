@@ -5,6 +5,7 @@ import { z } from "zod";
 type RegistryReconcileEnv = Env & {
 	PCC_CFO_DB?: D1Database;
 	NOVAPAY_INGEST_TOKEN?: string;
+	PCC_MCP_READ_TOKEN?: string;
 	SHOPIFY_UA_SERVICE?: Fetcher;
 };
 
@@ -117,9 +118,15 @@ async function loadShopifyOrdersByName(
 		throw new Error("SHOPIFY_UA_SERVICE binding is not configured");
 	}
 
+	if (!env.PCC_MCP_READ_TOKEN) {
+		throw new Error("PCC_MCP_READ_TOKEN is not configured");
+	}
+
 	const serviceFetch: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const req = new Request(input, init);
-		return env.SHOPIFY_UA_SERVICE!.fetch(req);
+		const headers = new Headers(req.headers);
+		headers.set("Authorization", `Bearer ${env.PCC_MCP_READ_TOKEN}`);
+		return env.SHOPIFY_UA_SERVICE!.fetch(new Request(req, { headers }));
 	};
 
 	const transport = new StreamableHTTPClientTransport(
