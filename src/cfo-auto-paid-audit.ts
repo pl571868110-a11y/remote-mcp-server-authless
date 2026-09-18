@@ -363,28 +363,56 @@ export async function handleAutoPaidAuditReadRequest(
 	const runId = nullableString(url.searchParams.get("run_id"));
 	const orderNumber = nullableString(url.searchParams.get("order"));
 	const eventStatus = nullableString(url.searchParams.get("status"));
+	const since = nullableString(url.searchParams.get("since"));
 
 	const runs = await e.PCC_CFO_DB.prepare(`
 		SELECT
-			run_id,
-			trigger_source,
-			mode,
-			status,
-			started_at,
-			finished_at,
-			candidates_found,
-			novaposhta_confirmed,
-			ready_for_shopify,
-			marked_paid,
-			verified_match_current,
-			decisions_count,
-			error_message
-		FROM cfo_auto_paid_runs
-		WHERE (? IS NULL OR run_id = ?)
-		ORDER BY started_at DESC
+			r.run_id,
+			r.trigger_source,
+			r.mode,
+			r.status,
+			r.started_at,
+			r.finished_at,
+			r.candidates_found,
+			r.novaposhta_confirmed,
+			r.ready_for_shopify,
+			r.marked_paid,
+			r.verified_match_current,
+			r.decisions_count,
+			r.error_message
+		FROM cfo_auto_paid_runs r
+		WHERE (? IS NULL OR r.run_id = ?)
+		  AND (? IS NULL OR r.started_at >= ?)
+		  AND (
+			? IS NULL OR EXISTS (
+				SELECT 1
+				FROM cfo_auto_paid_events e
+				WHERE e.run_id = r.run_id
+				  AND e.order_number = ?
+			)
+		  )
+		  AND (
+			? IS NULL OR EXISTS (
+				SELECT 1
+				FROM cfo_auto_paid_events e
+				WHERE e.run_id = r.run_id
+				  AND e.event_status = ?
+			)
+		  )
+		ORDER BY r.started_at DESC
 		LIMIT ?
 	`)
-		.bind(runId, runId, limit)
+		.bind(
+			runId,
+			runId,
+			since,
+			since,
+			orderNumber,
+			orderNumber,
+			eventStatus,
+			eventStatus,
+			limit,
+		)
 		.all();
 
 	const events = await e.PCC_CFO_DB.prepare(`
@@ -402,6 +430,7 @@ export async function handleAutoPaidAuditReadRequest(
 			created_at
 		FROM cfo_auto_paid_events
 		WHERE (? IS NULL OR run_id = ?)
+		  AND (? IS NULL OR created_at >= ?)
 		  AND (? IS NULL OR order_number = ?)
 		  AND (? IS NULL OR event_status = ?)
 		ORDER BY event_id DESC
@@ -410,6 +439,8 @@ export async function handleAutoPaidAuditReadRequest(
 		.bind(
 			runId,
 			runId,
+			since,
+			since,
 			orderNumber,
 			orderNumber,
 			eventStatus,
@@ -432,6 +463,7 @@ export async function handleAutoPaidAuditReadRequest(
 			run_id: runId,
 			order: orderNumber,
 			status: eventStatus,
+			since,
 			limit,
 		},
 		runs: runs.results || [],
