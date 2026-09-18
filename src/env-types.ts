@@ -4,6 +4,7 @@ declare global {
 	interface Env {
                 PCC_MCP_READ_TOKEN?: string;
                 PCC_MCP_WRITE_TOKEN?: string;
+                PCC_CFO_READ_TOKEN?: string;
 		ANTHROPIC_API_KEY?: string;
 		MONOBANK_TOKEN: string;
 		NOVAPOSHTA_API_KEY?: string;
