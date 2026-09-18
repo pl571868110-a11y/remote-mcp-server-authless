@@ -23,7 +23,15 @@ function isoNow(): string {
 function safeJson(value: unknown, maxLength = 12000): string | null {
 	try {
 		const text = JSON.stringify(value);
-		return text.length > maxLength ? text.slice(0, maxLength) : text;
+
+		if (text.length <= maxLength) {
+			return text;
+		}
+
+		return JSON.stringify({
+			truncated: true,
+			preview: text.slice(0, Math.max(0, maxLength - 64)),
+		});
 	} catch {
 		return null;
 	}
