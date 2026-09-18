@@ -404,6 +404,206 @@ function createServer() {
 	);
 
 	// ============================================================
+	// PCC AI CFO / AUTO-PAID AUDIT
+	// ============================================================
+
+	server.registerTool(
+		"cfo_auto_paid_audit",
+		{
+			description:
+				"Read-only history of PCC AI CFO automatic Shopify UA paid decisions. Shows runs, per-order events, blockers, and verification. Does not change Shopify or D1.",
+			inputSchema: z.object({
+				limit: z.number().int().min(1).max(100).default(20),
+				run_id: z.string().min(1).optional(),
+				order: z
+					.string()
+					.min(1)
+					.optional()
+					.describe("Shopify order such as #4785"),
+				status: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						"Audit event status such as SKIPPED, READY, MARKED_PAID, VERIFIED, ERROR",
+					),
+				since: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						"ISO timestamp lower bound, e.g. 2026-09-18T00:00:00Z",
+					),
+			}),
+		},
+		async ({ limit, run_id, order, status, since }) => {
+			if (!currentEnv.PCC_CFO_DB) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "PCC_CFO_DB is not configured",
+						},
+					],
+					isError: true,
+				};
+			}
+
+			const db = currentEnv.PCC_CFO_DB;
+			const normalizedOrder = order
+				? order.trim().startsWith("#")
+					? order.trim()
+					: `#${order.trim()}`
+				: null;
+			const runId = run_id?.trim() || null;
+			const eventStatus = status?.trim() || null;
+			const sinceValue = since?.trim() || null;
+
+			const runs = await db
+				.prepare(`
+					SELECT
+						r.run_id,
+						r.trigger_source,
+						r.mode,
+						r.status,
+						r.started_at,
+						r.finished_at,
+						r.candidates_found,
+						r.novaposhta_confirmed,
+						r.ready_for_shopify,
+						r.marked_paid,
+						r.verified_match_current,
+						r.decisions_count,
+						r.error_message
+					FROM cfo_auto_paid_runs r
+					WHERE (? IS NULL OR r.run_id = ?)
+					  AND (? IS NULL OR r.started_at >= ?)
+					  AND (
+						? IS NULL OR EXISTS (
+							SELECT 1
+							FROM cfo_auto_paid_events e
+							WHERE e.run_id = r.run_id
+							  AND e.order_number = ?
+						)
+					  )
+					  AND (
+						? IS NULL OR EXISTS (
+							SELECT 1
+							FROM cfo_auto_paid_events e
+							WHERE e.run_id = r.run_id
+							  AND e.event_status = ?
+						)
+					  )
+					ORDER BY r.started_at DESC
+					LIMIT ?
+				`)
+				.bind(
+					runId,
+					runId,
+					sinceValue,
+					sinceValue,
+					normalizedOrder,
+					normalizedOrder,
+					eventStatus,
+					eventStatus,
+					limit,
+				)
+				.all();
+
+			const events = await db
+				.prepare(`
+					SELECT
+						event_id,
+						run_id,
+						payment_key,
+						registry_no,
+						order_number,
+						tracking_number,
+						accepted_amount_cents,
+						event_status,
+						blockers_json,
+						details_json,
+						created_at
+					FROM cfo_auto_paid_events
+					WHERE (? IS NULL OR run_id = ?)
+					  AND (? IS NULL OR created_at >= ?)
+					  AND (? IS NULL OR order_number = ?)
+					  AND (? IS NULL OR event_status = ?)
+					ORDER BY event_id DESC
+					LIMIT ?
+				`)
+				.bind(
+					runId,
+					runId,
+					sinceValue,
+					sinceValue,
+					normalizedOrder,
+					normalizedOrder,
+					eventStatus,
+					eventStatus,
+					limit,
+				)
+				.all();
+
+			function parseJson(value: unknown) {
+				if (value == null || value === "") return null;
+				try {
+					return JSON.parse(String(value));
+				} catch {
+					return String(value);
+				}
+			}
+
+			const normalizedEvents = (events.results || []).map(
+				(row: any) => ({
+					...row,
+					amount_uah:
+						row.accepted_amount_cents == null
+							? null
+							: row.accepted_amount_cents / 100,
+					blockers: parseJson(row.blockers_json),
+					details: parseJson(row.details_json),
+					blockers_json: undefined,
+					details_json: undefined,
+				}),
+			);
+
+			const statusCounts: Record<string, number> = {};
+			for (const event of normalizedEvents as any[]) {
+				const key = String(event.event_status || "UNKNOWN");
+				statusCounts[key] = (statusCounts[key] || 0) + 1;
+			}
+
+			const result = {
+				ok: true,
+				filters: {
+					run_id: runId,
+					order: normalizedOrder,
+					status: eventStatus,
+					since: sinceValue,
+					limit,
+				},
+				summary: {
+					runs: (runs.results || []).length,
+					events: normalizedEvents.length,
+					status_counts: statusCounts,
+				},
+				runs: runs.results || [],
+				events: normalizedEvents,
+			};
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify(result, null, 2),
+					},
+				],
+			};
+		},
+	);
+
+	// ============================================================
 	// NOVAPAY
 	// ============================================================
 
