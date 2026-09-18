@@ -1,3 +1,4 @@
+import { handleCfoReadRequest } from "./cfo-read";
 import legacyWorker from "./index";
 import { authorizeMcpRequest } from "./mcp-auth";
 import { handleGoogleRequest } from "./google";
@@ -14,6 +15,9 @@ export default {
 	): Promise<Response> {
 		const authFailure = authorizeMcpRequest(request, env);
                 if (authFailure) return authFailure;
+
+                const cfoReadResponse = await handleCfoReadRequest(request, env, ctx);
+		if (cfoReadResponse) return cfoReadResponse;
 
                 const novaPayIngestResponse = await handleNovaPayIngestRequest(request, env, ctx);
 		if (novaPayIngestResponse) return novaPayIngestResponse;
