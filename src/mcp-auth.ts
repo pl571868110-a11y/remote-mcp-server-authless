@@ -20,10 +20,13 @@ function bearerToken(request: Request): string {
 
 const READ_MCP_PATHS = new Set([
         "/mcp",
-        "/cfo-read-mcp",
         "/google-mcp",
         "/shopify-pl-mcp",
         "/shopify-ua-mcp",
+]);
+
+const CFO_READ_MCP_PATHS = new Set([
+        "/cfo-read-mcp",
 ]);
 
 const WRITE_MCP_PATHS = new Set([
@@ -37,15 +40,18 @@ export function authorizeMcpRequest(
         const url = new URL(request.url);
 
         const isReadRoute = READ_MCP_PATHS.has(url.pathname);
+        const isCfoReadRoute = CFO_READ_MCP_PATHS.has(url.pathname);
         const isWriteRoute = WRITE_MCP_PATHS.has(url.pathname);
 
-        if (!isReadRoute && !isWriteRoute) {
+        if (!isReadRoute && !isCfoReadRoute && !isWriteRoute) {
                 return null;
         }
 
         const expected = isWriteRoute
                 ? env.PCC_MCP_WRITE_TOKEN
-                : env.PCC_MCP_READ_TOKEN;
+                : isCfoReadRoute
+                  ? env.PCC_CFO_READ_TOKEN
+                  : env.PCC_MCP_READ_TOKEN;
         if (!expected) {
                 return new Response("MCP authentication is not configured", {
                         status: 503,
