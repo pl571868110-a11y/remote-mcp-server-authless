@@ -1,3 +1,4 @@
+import { runAutoPaidWithAudit } from "./cfo-auto-paid-audit";
 import { reconcileNovaPayRegistry } from "./novapay-reconcile-registry";
 
 type AutoPaidEnv = Env & {
@@ -596,7 +597,11 @@ const mode: AutoPaidMode =
 raw?.mode === "execute" ? "execute" : "dry_run";
 
 try {
-return json(await runAutoPaid(env, mode));
+return json(
+			await runAutoPaidWithAudit(env, mode, "api", () =>
+				runAutoPaid(env, mode),
+			),
+		);
 } catch (error: any) {
 return json(
 { error: error?.message || String(error) },
