@@ -1,5 +1,3 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
 
 type RegistryReconcileEnv = Env & {
@@ -117,51 +115,95 @@ async function loadShopifyOrdersByName(
 	if (!env.SHOPIFY_UA_SERVICE) {
 		throw new Error("SHOPIFY_UA_SERVICE binding is not configured");
 	}
-
 	if (!env.PCC_MCP_READ_TOKEN) {
 		throw new Error("PCC_MCP_READ_TOKEN is not configured");
 	}
 
-	const serviceFetch: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-		const req = new Request(input, init);
-		const headers = new Headers(req.headers);
-		headers.set("Authorization", `Bearer ${env.PCC_MCP_READ_TOKEN}`);
-		return env.SHOPIFY_UA_SERVICE!.fetch(new Request(req, { headers }));
-	};
-
-	const transport = new StreamableHTTPClientTransport(
-		new URL("https://shopify-ua.internal/shopify-ua-mcp"),
-		{ fetch: serviceFetch },
-	);
-	const client = new Client({ name: "pcc-cfo-novapay-registry-reconcile", version: "1.0.0" });
 	const byName = new Map<string, ShopifyOrder>();
 
-	try {
-		await client.connect(transport);
+	for (const orderName of [...new Set(orderNames)]) {
+		const response = await env.SHOPIFY_UA_SERVICE.fetch(
+			new Request("https://shopify-ua.internal/shopify-ua-mcp", {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${env.PCC_MCP_READ_TOKEN}`,
+					"Content-Type": "application/json",
+					Accept: "application/json, text/event-stream",
+				},
+				body: JSON.stringify({
+					jsonrpc: "2.0",
+					id: orderName,
+					method: "tools/call",
+					params: {
+						name: "shopify_get_order",
+						arguments: { order: orderName },
+					},
+				}),
+			}),
+		);
 
-		for (const orderName of orderNames) {
-			const result: any = await client.callTool({
-				name: "shopify_get_order",
-				arguments: { order: orderName },
-			});
-			if (result?.isError) {
-				throw new Error(`Shopify MCP tool error for ${orderName}: ${JSON.stringify(result.content || result)}`);
-			}
+		const raw = await response.text();
 
-			const block = (result?.content || []).find((item: any) => item?.type === "text");
-			if (!block?.text) continue;
-			const parsed = JSON.parse(block.text);
-			if (parsed?.error) throw new Error(`Shopify UA for ${orderName}: ${parsed.error}`);
-
-			const matches: ShopifyOrder[] = Array.isArray(parsed?.matches) ? parsed.matches : [];
-			const exact = matches.find((order) => String(order?.name) === orderName) || matches[0];
-			if (exact?.name) byName.set(orderName, exact);
+		if (!response.ok) {
+			throw new Error(
+				`Shopify MCP HTTP ${response.status}: ${raw.slice(0, 500)}`,
+			);
 		}
 
-		return byName;
-	} finally {
-		await client.close().catch(() => undefined);
+		const dataLine = raw
+			.split(/\r?\n/)
+			.find((line) => line.startsWith("data: "));
+
+		if (!dataLine) {
+			throw new Error(
+				`Shopify MCP returned no SSE data: ${raw.slice(0, 500)}`,
+			);
+		}
+
+		const rpc = JSON.parse(dataLine.slice(6));
+
+		if (rpc?.error) {
+			throw new Error(
+				`Shopify MCP RPC error for ${orderName}: ${JSON.stringify(rpc.error)}`,
+			);
+		}
+
+		const result: any = rpc?.result;
+
+		if (result?.isError) {
+			throw new Error(
+				`Shopify MCP tool error for ${orderName}: ${JSON.stringify(result.content || result)}`,
+			);
+		}
+
+		const block = (result?.content || []).find(
+			(item: any) => item?.type === "text",
+		);
+
+		if (!block?.text) continue;
+
+		const parsed = JSON.parse(block.text);
+
+		if (parsed?.error) {
+			throw new Error(
+				`Shopify UA for ${orderName}: ${parsed.error}`,
+			);
+		}
+
+		const matches: ShopifyOrder[] = Array.isArray(parsed?.matches)
+			? parsed.matches
+			: [];
+
+		const exact =
+			matches.find((order) => String(order?.name) === orderName) ||
+			matches[0];
+
+		if (exact?.name) {
+			byName.set(orderName, exact);
+		}
 	}
+
+	return byName;
 }
 
 export async function reconcileNovaPayRegistry(

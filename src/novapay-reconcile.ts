@@ -1,5 +1,3 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
 
 type ReconcileEnv = Env & {
@@ -88,28 +86,65 @@ function moneyToCents(value: unknown): number | null {
 	return sign * (Number(absWhole) * 100 + Number((fraction + "00").slice(0, 2)));
 }
 
-function createShopifyClient(env: ReconcileEnv) {
+async function callShopifyTool(
+	env: ReconcileEnv,
+	name: string,
+	args: Record<string, unknown>,
+): Promise<any> {
 	if (!env.SHOPIFY_UA_SERVICE) {
 		throw new Error("SHOPIFY_UA_SERVICE binding is not configured");
 	}
-
 	if (!env.PCC_MCP_READ_TOKEN) {
 		throw new Error("PCC_MCP_READ_TOKEN is not configured");
 	}
 
-	const serviceFetch: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-		const req = new Request(input, init);
-		const headers = new Headers(req.headers);
-		headers.set("Authorization", `Bearer ${env.PCC_MCP_READ_TOKEN}`);
-		return env.SHOPIFY_UA_SERVICE!.fetch(new Request(req, { headers }));
-	};
-
-	const transport = new StreamableHTTPClientTransport(
-		new URL("https://shopify-ua.internal/shopify-ua-mcp"),
-		{ fetch: serviceFetch },
+	const response = await env.SHOPIFY_UA_SERVICE.fetch(
+		new Request("https://shopify-ua.internal/shopify-ua-mcp", {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${env.PCC_MCP_READ_TOKEN}`,
+				"Content-Type": "application/json",
+				Accept: "application/json, text/event-stream",
+			},
+			body: JSON.stringify({
+				jsonrpc: "2.0",
+				id: 1,
+				method: "tools/call",
+				params: {
+					name,
+					arguments: args,
+				},
+			}),
+		}),
 	);
-	const client = new Client({ name: "pcc-cfo-novapay-reconcile", version: "1.1.0" });
-	return { client, transport };
+
+	const raw = await response.text();
+
+	if (!response.ok) {
+		throw new Error(
+			`Shopify MCP HTTP ${response.status}: ${raw.slice(0, 500)}`,
+		);
+	}
+
+	const dataLine = raw
+		.split(/\r?\n/)
+		.find((line) => line.startsWith("data: "));
+
+	if (!dataLine) {
+		throw new Error(
+			`Shopify MCP returned no SSE data: ${raw.slice(0, 500)}`,
+		);
+	}
+
+	const rpc = JSON.parse(dataLine.slice(6));
+
+	if (rpc?.error) {
+		throw new Error(
+			`Shopify MCP RPC error: ${JSON.stringify(rpc.error)}`,
+		);
+	}
+
+	return rpc?.result;
 }
 
 function parseToolText(result: any): any {
@@ -128,48 +163,54 @@ async function callShopifyOrdersBetween(
 	startDate: string,
 	endDate: string,
 ): Promise<{ store?: string; currency?: string; orders: ShopifyOrder[] }> {
-	const { client, transport } = createShopifyClient(env);
+	const result = await callShopifyTool(
+		env,
+		"shopify_ua_orders_between",
+		{
+			start_date: startDate,
+			end_date: endDate,
+		},
+	);
 
-	try {
-		await client.connect(transport);
-		const result: any = await client.callTool({
-			name: "shopify_ua_orders_between",
-			arguments: { start_date: startDate, end_date: endDate },
-		});
-		const parsed = parseToolText(result);
-		return {
-			store: parsed?.store,
-			currency: parsed?.currency,
-			orders: Array.isArray(parsed?.orders) ? parsed.orders : [],
-		};
-	} finally {
-		await client.close().catch(() => undefined);
-	}
+	const parsed = parseToolText(result);
+
+	return {
+		store: parsed?.store,
+		currency: parsed?.currency,
+		orders: Array.isArray(parsed?.orders) ? parsed.orders : [],
+	};
 }
 
 async function callShopifyOrdersByName(
 	env: ReconcileEnv,
 	orderNames: string[],
 ): Promise<Map<string, ShopifyOrder>> {
-	const { client, transport } = createShopifyClient(env);
 	const byName = new Map<string, ShopifyOrder>();
 
-	try {
-		await client.connect(transport);
-		for (const orderName of [...new Set(orderNames)]) {
-			const result: any = await client.callTool({
-				name: "shopify_get_order",
-				arguments: { order: orderName },
-			});
-			const parsed = parseToolText(result);
-			const matches: ShopifyOrder[] = Array.isArray(parsed?.matches) ? parsed.matches : [];
-			const exact = matches.find((order) => String(order?.name || "") === orderName) || matches[0];
-			if (exact?.name) byName.set(String(exact.name), exact);
+	for (const orderName of [...new Set(orderNames)]) {
+		const result = await callShopifyTool(
+			env,
+			"shopify_get_order",
+			{ order: orderName },
+		);
+
+		const parsed = parseToolText(result);
+
+		const matches: ShopifyOrder[] = Array.isArray(parsed?.matches)
+			? parsed.matches
+			: [];
+
+		const exact =
+			matches.find(
+				(order) => String(order?.name || "") === orderName,
+			) || matches[0];
+
+		if (exact?.name) {
+			byName.set(String(exact.name), exact);
 		}
-		return byName;
-	} finally {
-		await client.close().catch(() => undefined);
 	}
+
+	return byName;
 }
 
 function classify(payment: NovaPayRow, order: ShopifyOrder | undefined) {
