@@ -404,6 +404,395 @@ function createServer() {
 	);
 
 	// ============================================================
+	// PCC AI CFO / AUTO-PAID AUDIT
+	// ============================================================
+
+	server.registerTool(
+		"cfo_auto_paid_audit",
+		{
+			description:
+				"Read-only history of PCC AI CFO automatic Shopify UA paid decisions. Shows runs, per-order events, blockers, and verification. Does not change Shopify or D1.",
+			inputSchema: z.object({
+				limit: z.number().int().min(1).max(100).default(20),
+				run_id: z.string().min(1).optional(),
+				order: z
+					.string()
+					.min(1)
+					.optional()
+					.describe("Shopify order such as #4785"),
+				status: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						"Audit event status such as SKIPPED, READY, MARKED_PAID, VERIFIED, ERROR",
+					),
+				since: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						"ISO timestamp lower bound, e.g. 2026-09-18T00:00:00Z",
+					),
+			}),
+		},
+		async ({ limit, run_id, order, status, since }) => {
+			if (!currentEnv.PCC_CFO_DB) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "PCC_CFO_DB is not configured",
+						},
+					],
+					isError: true,
+				};
+			}
+
+			const db = currentEnv.PCC_CFO_DB;
+			const normalizedOrder = order
+				? order.trim().startsWith("#")
+					? order.trim()
+					: `#${order.trim()}`
+				: null;
+			const runId = run_id?.trim() || null;
+			const eventStatus = status?.trim() || null;
+			const sinceValue = since?.trim() || null;
+
+			const runs = await db
+				.prepare(`
+					SELECT
+						r.run_id,
+						r.trigger_source,
+						r.mode,
+						r.status,
+						r.started_at,
+						r.finished_at,
+						r.candidates_found,
+						r.novaposhta_confirmed,
+						r.ready_for_shopify,
+						r.marked_paid,
+						r.verified_match_current,
+						r.decisions_count,
+						r.error_message
+					FROM cfo_auto_paid_runs r
+					WHERE (? IS NULL OR r.run_id = ?)
+					  AND (? IS NULL OR r.started_at >= ?)
+					  AND (
+						? IS NULL OR EXISTS (
+							SELECT 1
+							FROM cfo_auto_paid_events e
+							WHERE e.run_id = r.run_id
+							  AND e.order_number = ?
+						)
+					  )
+					  AND (
+						? IS NULL OR EXISTS (
+							SELECT 1
+							FROM cfo_auto_paid_events e
+							WHERE e.run_id = r.run_id
+							  AND e.event_status = ?
+						)
+					  )
+					ORDER BY r.started_at DESC
+					LIMIT ?
+				`)
+				.bind(
+					runId,
+					runId,
+					sinceValue,
+					sinceValue,
+					normalizedOrder,
+					normalizedOrder,
+					eventStatus,
+					eventStatus,
+					limit,
+				)
+				.all();
+
+			const events = await db
+				.prepare(`
+					SELECT
+						event_id,
+						run_id,
+						payment_key,
+						registry_no,
+						order_number,
+						tracking_number,
+						accepted_amount_cents,
+						event_status,
+						blockers_json,
+						details_json,
+						created_at
+					FROM cfo_auto_paid_events
+					WHERE (? IS NULL OR run_id = ?)
+					  AND (? IS NULL OR created_at >= ?)
+					  AND (? IS NULL OR order_number = ?)
+					  AND (? IS NULL OR event_status = ?)
+					ORDER BY event_id DESC
+					LIMIT ?
+				`)
+				.bind(
+					runId,
+					runId,
+					sinceValue,
+					sinceValue,
+					normalizedOrder,
+					normalizedOrder,
+					eventStatus,
+					eventStatus,
+					limit,
+				)
+				.all();
+
+			function parseJson(value: unknown) {
+				if (value == null || value === "") return null;
+				try {
+					return JSON.parse(String(value));
+				} catch {
+					return String(value);
+				}
+			}
+
+			const normalizedEvents = (events.results || []).map(
+				(row: any) => ({
+					...row,
+					amount_uah:
+						row.accepted_amount_cents == null
+							? null
+							: row.accepted_amount_cents / 100,
+					blockers: parseJson(row.blockers_json),
+					details: parseJson(row.details_json),
+					blockers_json: undefined,
+					details_json: undefined,
+				}),
+			);
+
+			const statusCounts: Record<string, number> = {};
+			for (const event of normalizedEvents as any[]) {
+				const key = String(event.event_status || "UNKNOWN");
+				statusCounts[key] = (statusCounts[key] || 0) + 1;
+			}
+
+			const result = {
+				ok: true,
+				filters: {
+					run_id: runId,
+					order: normalizedOrder,
+					status: eventStatus,
+					since: sinceValue,
+					limit,
+				},
+				summary: {
+					runs: (runs.results || []).length,
+					events: normalizedEvents.length,
+					status_counts: statusCounts,
+				},
+				runs: runs.results || [],
+				events: normalizedEvents,
+			};
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify(result, null, 2),
+					},
+				],
+			};
+		},
+	);
+
+	server.registerTool(
+		"cfo_auto_paid_report",
+		{
+			description:
+				"Read-only one-click operational report for PCC AI CFO automatic Shopify UA paid processing. Defaults to the last 24 hours and shows runs, verified paid orders, skipped orders with blockers, and errors.",
+			inputSchema: z.object({
+				hours: z
+					.number()
+					.int()
+					.min(1)
+					.max(168)
+					.default(24)
+					.describe("Lookback window in hours; default 24, maximum 168"),
+			}),
+		},
+		async ({ hours }) => {
+			if (!currentEnv.PCC_CFO_DB) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: "PCC_CFO_DB is not configured",
+						},
+					],
+					isError: true,
+				};
+			}
+
+			const db = currentEnv.PCC_CFO_DB;
+			const since = new Date(
+				Date.now() - hours * 60 * 60 * 1000,
+			).toISOString();
+
+			const runsResult = await db
+				.prepare(`
+					SELECT
+						run_id,
+						trigger_source,
+						mode,
+						status,
+						started_at,
+						finished_at,
+						candidates_found,
+						novaposhta_confirmed,
+						ready_for_shopify,
+						marked_paid,
+						verified_match_current,
+						decisions_count,
+						error_message
+					FROM cfo_auto_paid_runs
+					WHERE started_at >= ?
+					ORDER BY started_at DESC
+					LIMIT 100
+				`)
+				.bind(since)
+				.all();
+
+			const eventsResult = await db
+				.prepare(`
+					SELECT
+						event_id,
+						run_id,
+						registry_no,
+						order_number,
+						tracking_number,
+						accepted_amount_cents,
+						event_status,
+						blockers_json,
+						details_json,
+						created_at
+					FROM cfo_auto_paid_events
+					WHERE created_at >= ?
+					ORDER BY event_id DESC
+					LIMIT 500
+				`)
+				.bind(since)
+				.all();
+
+			const runs = (runsResult.results || []) as any[];
+			const events = (eventsResult.results || []) as any[];
+
+			function parseJson(value: unknown) {
+				if (value == null || value === "") return null;
+				try {
+					return JSON.parse(String(value));
+				} catch {
+					return String(value);
+				}
+			}
+
+			function sum(field: string): number {
+				return runs.reduce(
+					(total, row) => total + Number(row?.[field] || 0),
+					0,
+				);
+			}
+
+			const verified = events
+				.filter((row) => row.event_status === "VERIFIED")
+				.map((row) => ({
+					order: row.order_number,
+					registry_no: row.registry_no,
+					tracking_number: row.tracking_number,
+					amount_uah:
+						row.accepted_amount_cents == null
+							? null
+							: row.accepted_amount_cents / 100,
+					created_at: row.created_at,
+				}));
+
+			const skipped = events
+				.filter((row) => row.event_status === "SKIPPED")
+				.map((row) => ({
+					order: row.order_number,
+					registry_no: row.registry_no,
+					tracking_number: row.tracking_number,
+					amount_uah:
+						row.accepted_amount_cents == null
+							? null
+							: row.accepted_amount_cents / 100,
+					blockers: parseJson(row.blockers_json),
+					created_at: row.created_at,
+				}));
+
+			const eventErrors = events
+				.filter((row) => row.event_status === "ERROR")
+				.map((row) => ({
+					run_id: row.run_id,
+					order: row.order_number,
+					details: parseJson(row.details_json),
+					created_at: row.created_at,
+				}));
+
+			const failedRuns = runs
+				.filter((row) => row.status === "FAILED")
+				.map((row) => ({
+					run_id: row.run_id,
+					trigger_source: row.trigger_source,
+					started_at: row.started_at,
+					error_message: row.error_message,
+				}));
+
+			const result = {
+				ok: true,
+				window: {
+					hours,
+					since,
+					generated_at: new Date().toISOString(),
+				},
+				summary: {
+					runs: runs.length,
+					scheduled_runs: runs.filter(
+						(row) => row.trigger_source === "scheduled",
+					).length,
+					api_runs: runs.filter(
+						(row) => row.trigger_source === "api",
+					).length,
+					succeeded_runs: runs.filter(
+						(row) => row.status === "SUCCEEDED",
+					).length,
+					failed_runs: failedRuns.length,
+					candidates_found: sum("candidates_found"),
+					novaposhta_confirmed: sum("novaposhta_confirmed"),
+					ready_for_shopify: sum("ready_for_shopify"),
+					marked_paid: sum("marked_paid"),
+					verified_match_current: sum("verified_match_current"),
+					skipped_events: skipped.length,
+					error_events: eventErrors.length,
+				},
+				verified_paid_orders: verified,
+				skipped_orders: skipped,
+				errors: {
+					failed_runs: failedRuns,
+					events: eventErrors,
+				},
+				runs,
+			};
+
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify(result, null, 2),
+					},
+				],
+			};
+		},
+	);
+
+	// ============================================================
 	// NOVAPAY
 	// ============================================================
 
