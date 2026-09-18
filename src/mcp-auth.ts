@@ -23,6 +23,7 @@ const READ_MCP_PATHS = new Set([
         "/google-mcp",
         "/shopify-pl-mcp",
         "/shopify-ua-mcp",
+        "/google-diagnostics-mcp",
 ]);
 
 const CFO_READ_MCP_PATHS = new Set([

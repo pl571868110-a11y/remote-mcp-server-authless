@@ -33,6 +33,7 @@ const protectedPaths = [
         "/google-mcp",
         "/shopify-pl-mcp",
         "/shopify-ua-mcp",
+        "/google-diagnostics-mcp",
 ];
 
 for (const path of protectedPaths) {
