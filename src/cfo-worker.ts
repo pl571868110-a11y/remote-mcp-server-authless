@@ -1,3 +1,4 @@
+import { handleAutoPaidRequest, runAutoPaid } from "./cfo-auto-paid";
 import { handleNovaPayIngestRequest } from "./novapay-ingest";
 import { handleNovaPayReconcileRequest } from "./novapay-reconcile";
 import {
@@ -81,6 +82,18 @@ export default {
 		const reconcileResponse = await handleNovaPayReconcileRequest(request, env, ctx);
 		if (reconcileResponse) return reconcileResponse;
 
+		const autoPaidResponse = await handleAutoPaidRequest(request, env);
+		if (autoPaidResponse) return autoPaidResponse;
+
 		return new Response("Not Found", { status: 404 });
+	},
+
+	async scheduled(
+		_controller: ScheduledController,
+		env: Env,
+		_ctx: ExecutionContext,
+	): Promise<void> {
+		const result = await runAutoPaid(env, "execute");
+		console.log("PCC CFO daily auto-paid", result);
 	},
 } satisfies ExportedHandler<Env>;

@@ -21,7 +21,10 @@
 			"service": "remote-mcp-server-authless"
 		}
 	],
-	"observability": {
+	"triggers": {
+                "crons": ["15 7 * * *"]
+        },
+        "observability": {
 		"enabled": true
 	}
 }
