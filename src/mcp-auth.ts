@@ -20,6 +20,7 @@ function bearerToken(request: Request): string {
 
 const READ_MCP_PATHS = new Set([
         "/mcp",
+        "/cfo-read-mcp",
         "/google-mcp",
         "/shopify-pl-mcp",
         "/shopify-ua-mcp",
