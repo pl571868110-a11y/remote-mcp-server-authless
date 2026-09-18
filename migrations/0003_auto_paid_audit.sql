@@ -51,3 +51,26 @@ CREATE INDEX IF NOT EXISTS idx_cfo_auto_paid_events_status
 
 CREATE INDEX IF NOT EXISTS idx_cfo_auto_paid_events_created_at
   ON cfo_auto_paid_events(created_at);
+
+
+-- Audit events are immutable after insertion.
+CREATE TRIGGER IF NOT EXISTS trg_cfo_auto_paid_events_no_update
+BEFORE UPDATE ON cfo_auto_paid_events
+FOR EACH ROW
+BEGIN
+  SELECT RAISE(ABORT, 'CFO_AUTO_PAID_EVENT_IMMUTABLE');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_cfo_auto_paid_events_no_delete
+BEFORE DELETE ON cfo_auto_paid_events
+FOR EACH ROW
+BEGIN
+  SELECT RAISE(ABORT, 'CFO_AUTO_PAID_EVENT_IMMUTABLE');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_cfo_auto_paid_runs_no_delete
+BEFORE DELETE ON cfo_auto_paid_runs
+FOR EACH ROW
+BEGIN
+  SELECT RAISE(ABORT, 'CFO_AUTO_PAID_RUN_IMMUTABLE');
+END;
