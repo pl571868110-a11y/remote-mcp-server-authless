@@ -1,4 +1,5 @@
 import legacyWorker from "./index";
+import { authorizeMcpRequest } from "./mcp-auth";
 import { handleGoogleRequest } from "./google";
 import { handleGoogleDiagnosticsRequest } from "./google-diagnostics";
 import { handleShopifyRequest } from "./shopify-pl";
@@ -11,7 +12,10 @@ export default {
 		env: Env,
 		ctx: ExecutionContext,
 	): Promise<Response> {
-		const novaPayIngestResponse = await handleNovaPayIngestRequest(request, env, ctx);
+		const authFailure = authorizeMcpRequest(request, env);
+                if (authFailure) return authFailure;
+
+                const novaPayIngestResponse = await handleNovaPayIngestRequest(request, env, ctx);
 		if (novaPayIngestResponse) return novaPayIngestResponse;
 
 		const googleResponse = await handleGoogleRequest(request, env, ctx);
