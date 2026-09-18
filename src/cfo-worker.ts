@@ -1,4 +1,7 @@
-import { runAutoPaidWithAudit } from "./cfo-auto-paid-audit";
+import {
+	handleAutoPaidAuditReadRequest,
+	runAutoPaidWithAudit,
+} from "./cfo-auto-paid-audit";
 import { handleAutoPaidRequest, runAutoPaid } from "./cfo-auto-paid";
 import { handleNovaPayIngestRequest } from "./novapay-ingest";
 import { handleNovaPayReconcileRequest } from "./novapay-reconcile";
@@ -85,6 +88,12 @@ export default {
 
 		const autoPaidResponse = await handleAutoPaidRequest(request, env);
 		if (autoPaidResponse) return autoPaidResponse;
+
+		const autoPaidAuditResponse = await handleAutoPaidAuditReadRequest(
+			request,
+			env,
+		);
+		if (autoPaidAuditResponse) return autoPaidAuditResponse;
 
 		return new Response("Not Found", { status: 404 });
 	},
