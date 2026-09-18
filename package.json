@@ -10,7 +10,7 @@
 		"start": "wrangler dev",
 		"cf-typegen": "wrangler types",
 		"type-check": "tsc --noEmit",
-                "test": "node --test ./test/shopify-ua-dates.test.ts"
+                "test": "node --test ./test/*.test.ts"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "1.30.0",

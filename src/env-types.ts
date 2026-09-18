@@ -5,6 +5,9 @@ declare global {
                 PCC_MCP_READ_TOKEN?: string;
                 PCC_MCP_WRITE_TOKEN?: string;
                 PCC_CFO_READ_TOKEN?: string;
+		// Release 1: dedicated per-contour PL credentials.
+		PCC_GOOGLE_PL_READ_TOKEN?: string;
+		PCC_SHOPIFY_PL_READ_TOKEN?: string;
 		ANTHROPIC_API_KEY?: string;
 		MONOBANK_TOKEN: string;
 		NOVAPOSHTA_API_KEY?: string;
