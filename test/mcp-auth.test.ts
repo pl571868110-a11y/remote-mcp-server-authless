@@ -5,11 +5,13 @@ import { authorizeMcpRequest } from "../src/mcp-auth.ts";
 
 const TOKEN = "test-read-token-123";
 const WRITE_TOKEN = "test-write-token-456";
+const CFO_TOKEN = "test-cfo-read-token-789";
 
-function env(readToken?: string, writeToken?: string): Env {
+function env(readToken?: string, writeToken?: string, cfoToken?: string): Env {
         return {
                 PCC_MCP_READ_TOKEN: readToken,
                 PCC_MCP_WRITE_TOKEN: writeToken,
+                PCC_CFO_READ_TOKEN: cfoToken,
         } as Env;
 }
 
@@ -28,7 +30,6 @@ function req(path: string, token?: string): Request {
 
 const protectedPaths = [
         "/mcp",
-        "/cfo-read-mcp",
         "/google-mcp",
         "/shopify-pl-mcp",
         "/shopify-ua-mcp",
@@ -64,6 +65,47 @@ for (const path of protectedPaths) {
                 assert.equal(result.status, 503);
         });
 }
+
+test("/cfo-read-mcp: missing credential -> 401", () => {
+        const result = authorizeMcpRequest(req("/cfo-read-mcp"), env(TOKEN, WRITE_TOKEN, CFO_TOKEN));
+        assert.ok(result);
+        assert.equal(result.status, 401);
+});
+
+test("/cfo-read-mcp: wrong credential -> 401", () => {
+        const result = authorizeMcpRequest(
+                req("/cfo-read-mcp", "definitely-wrong"),
+                env(TOKEN, WRITE_TOKEN, CFO_TOKEN),
+        );
+        assert.ok(result);
+        assert.equal(result.status, 401);
+});
+
+test("/cfo-read-mcp: dedicated CFO credential -> allowed", () => {
+        const result = authorizeMcpRequest(
+                req("/cfo-read-mcp", CFO_TOKEN),
+                env(TOKEN, WRITE_TOKEN, CFO_TOKEN),
+        );
+        assert.equal(result, null);
+});
+
+test("/cfo-read-mcp: general READ credential -> 401", () => {
+        const result = authorizeMcpRequest(
+                req("/cfo-read-mcp", TOKEN),
+                env(TOKEN, WRITE_TOKEN, CFO_TOKEN),
+        );
+        assert.ok(result);
+        assert.equal(result.status, 401);
+});
+
+test("/cfo-read-mcp: CFO secret missing -> 503 fail closed", () => {
+        const result = authorizeMcpRequest(
+                req("/cfo-read-mcp", CFO_TOKEN),
+                env(TOKEN, WRITE_TOKEN),
+        );
+        assert.ok(result);
+        assert.equal(result.status, 503);
+});
 
 const unprotectedPaths = [
         "/oauth/google/start",
