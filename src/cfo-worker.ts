@@ -1,3 +1,4 @@
+import { runAutoPaidWithAudit } from "./cfo-auto-paid-audit";
 import { handleAutoPaidRequest, runAutoPaid } from "./cfo-auto-paid";
 import { handleNovaPayIngestRequest } from "./novapay-ingest";
 import { handleNovaPayReconcileRequest } from "./novapay-reconcile";
@@ -93,7 +94,12 @@ export default {
 		env: Env,
 		_ctx: ExecutionContext,
 	): Promise<void> {
-		const result = await runAutoPaid(env, "execute");
+		const result = await runAutoPaidWithAudit(
+			env,
+			"execute",
+			"scheduled",
+			() => runAutoPaid(env, "execute"),
+		);
 		console.log("PCC CFO daily auto-paid", result);
 	},
 } satisfies ExportedHandler<Env>;
