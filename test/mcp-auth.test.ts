@@ -28,6 +28,7 @@ function req(path: string, token?: string): Request {
 
 const protectedPaths = [
         "/mcp",
+        "/cfo-read-mcp",
         "/google-mcp",
         "/shopify-pl-mcp",
         "/shopify-ua-mcp",
