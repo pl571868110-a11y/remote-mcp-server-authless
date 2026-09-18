@@ -3,6 +3,7 @@ type AutoPaidTriggerSource = "api" | "scheduled";
 
 type AutoPaidAuditEnv = Env & {
 	PCC_CFO_DB?: D1Database;
+	PCC_MCP_READ_TOKEN?: string;
 };
 
 type AutoPaidResult = {
@@ -280,4 +281,160 @@ export async function runAutoPaidWithAudit(
 
 		throw error;
 	}
+}
+
+
+function jsonResponse(data: unknown, status = 200): Response {
+	return new Response(JSON.stringify(data, null, 2), {
+		status,
+		headers: { "Content-Type": "application/json; charset=utf-8" },
+	});
+}
+
+function bearerToken(request: Request): string {
+	const auth = request.headers.get("Authorization") || "";
+	return auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+
+	let diff = 0;
+
+	for (let i = 0; i < a.length; i++) {
+		diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	}
+
+	return diff === 0;
+}
+
+function parseStoredJson(value: unknown): unknown {
+	if (value == null || value === "") return null;
+
+	try {
+		return JSON.parse(String(value));
+	} catch {
+		return String(value);
+	}
+}
+
+function clampLimit(raw: string | null, fallback = 20): number {
+	const n = Number(raw ?? fallback);
+
+	if (!Number.isFinite(n)) return fallback;
+
+	return Math.min(100, Math.max(1, Math.trunc(n)));
+}
+
+export async function handleAutoPaidAuditReadRequest(
+	request: Request,
+	env: Env,
+): Promise<Response | null> {
+	const url = new URL(request.url);
+
+	if (url.pathname !== "/internal/auto-paid/audit") {
+		return null;
+	}
+
+	if (request.method !== "GET") {
+		return new Response("Method Not Allowed", {
+			status: 405,
+			headers: { Allow: "GET" },
+		});
+	}
+
+	const e = env as AutoPaidAuditEnv;
+
+	if (!e.PCC_CFO_DB) {
+		return jsonResponse({ error: "PCC_CFO_DB is not configured" }, 503);
+	}
+
+	if (!e.PCC_MCP_READ_TOKEN) {
+		return jsonResponse({ error: "PCC_MCP_READ_TOKEN is not configured" }, 503);
+	}
+
+	const supplied = bearerToken(request);
+
+	if (!supplied || !constantTimeEqual(supplied, e.PCC_MCP_READ_TOKEN)) {
+		return jsonResponse({ error: "Unauthorized" }, 401);
+	}
+
+	const limit = clampLimit(url.searchParams.get("limit"));
+	const runId = nullableString(url.searchParams.get("run_id"));
+	const orderNumber = nullableString(url.searchParams.get("order"));
+	const eventStatus = nullableString(url.searchParams.get("status"));
+
+	const runs = await e.PCC_CFO_DB.prepare(`
+		SELECT
+			run_id,
+			trigger_source,
+			mode,
+			status,
+			started_at,
+			finished_at,
+			candidates_found,
+			novaposhta_confirmed,
+			ready_for_shopify,
+			marked_paid,
+			verified_match_current,
+			decisions_count,
+			error_message
+		FROM cfo_auto_paid_runs
+		WHERE (? IS NULL OR run_id = ?)
+		ORDER BY started_at DESC
+		LIMIT ?
+	`)
+		.bind(runId, runId, limit)
+		.all();
+
+	const events = await e.PCC_CFO_DB.prepare(`
+		SELECT
+			event_id,
+			run_id,
+			payment_key,
+			registry_no,
+			order_number,
+			tracking_number,
+			accepted_amount_cents,
+			event_status,
+			blockers_json,
+			details_json,
+			created_at
+		FROM cfo_auto_paid_events
+		WHERE (? IS NULL OR run_id = ?)
+		  AND (? IS NULL OR order_number = ?)
+		  AND (? IS NULL OR event_status = ?)
+		ORDER BY event_id DESC
+		LIMIT ?
+	`)
+		.bind(
+			runId,
+			runId,
+			orderNumber,
+			orderNumber,
+			eventStatus,
+			eventStatus,
+			limit,
+		)
+		.all();
+
+	const normalizedEvents = (events.results || []).map((row: any) => ({
+		...row,
+		blockers: parseStoredJson(row.blockers_json),
+		details: parseStoredJson(row.details_json),
+		blockers_json: undefined,
+		details_json: undefined,
+	}));
+
+	return jsonResponse({
+		ok: true,
+		filters: {
+			run_id: runId,
+			order: orderNumber,
+			status: eventStatus,
+			limit,
+		},
+		runs: runs.results || [],
+		events: normalizedEvents,
+	});
 }
