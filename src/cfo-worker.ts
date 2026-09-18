@@ -1,6 +1,9 @@
 import { handleNovaPayIngestRequest } from "./novapay-ingest";
 import { handleNovaPayReconcileRequest } from "./novapay-reconcile";
-import { handleNovaPayRegistryReconcileRequest } from "./novapay-reconcile-registry";
+import {
+	handleNovaPayRegistryReconcileRequest,
+	reconcileNovaPayRegistry,
+} from "./novapay-reconcile-registry";
 
 function health(env: Env) {
 	const e = env as Env & {
@@ -44,7 +47,33 @@ export default {
 		}
 
 		const ingestResponse = await handleNovaPayIngestRequest(request, env, ctx);
-		if (ingestResponse) return ingestResponse;
+
+		if (ingestResponse) {
+			if (ingestResponse.ok) {
+				try {
+					const payload: any = await ingestResponse.clone().json();
+
+					if (payload?.ok === true && payload?.registry_no) {
+						const registryNo = String(payload.registry_no);
+
+						ctx.waitUntil(
+							reconcileNovaPayRegistry(env, registryNo).catch((error) => {
+								console.error("NovaPay registry reconciliation failed", {
+									registry_no: registryNo,
+									error: error?.message || String(error),
+								});
+							}),
+						);
+					}
+				} catch (error: any) {
+					console.error("NovaPay ingest response parsing failed", {
+						error: error?.message || String(error),
+					});
+				}
+			}
+
+			return ingestResponse;
+		}
 
 		const registryReconcileResponse = await handleNovaPayRegistryReconcileRequest(request, env, ctx);
 		if (registryReconcileResponse) return registryReconcileResponse;
