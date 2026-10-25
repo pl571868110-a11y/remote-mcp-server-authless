@@ -272,3 +272,14 @@ test('generic Google credentials require explicit selection when UA credentials 
   const health = await (await handle(request('health'), { ...env, META_REVIEW_GOOGLE_SOURCE: 'typo' })).json();
   assert.equal(health.ga4, false);
 });
+
+test('GA4 service-disabled diagnostic never returns provider messages or metadata', async () => {
+  mockApis();
+  const upstream = global.fetch;
+  global.fetch = async (url, init) => new URL(url).hostname === 'analyticsdata.googleapis.com'
+    ? new Response(JSON.stringify({ error: { status: 'PERMISSION_DENIED', message: 'private upstream text', details: [{ reason: 'SERVICE_DISABLED', metadata: { consumer: 'private project' } }] } }), { status: 403 })
+    : upstream(url, init);
+  const report = await (await handle(request('preflight', range), env)).json();
+  assert.deepEqual(report.sources.ga4_current.diagnostic, { http_status: 403, provider_error: 'SERVICE_DISABLED', kind: 'ga4_report' });
+  assert.equal(JSON.stringify(report).includes('private'), false);
+});

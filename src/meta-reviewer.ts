@@ -21,7 +21,7 @@ async function withReviewSource<T>(source: string, task: () => Promise<T>): Prom
 		const message = error instanceof Error ? error.message : "";
 		const status = message.match(/(?:Meta API |Meta pagination |failed \()(\d{3})/);
 		const code = message.match(/\bcode (\d+)\b/);
-		const providerError = message.match(/\b(invalid_grant|invalid_client|unauthorized_client|invalid_scope|access_denied)\b/);
+		const providerError = message.match(/\b(invalid_grant|invalid_client|unauthorized_client|invalid_scope|access_denied|SERVICE_DISABLED|API_DISABLED|ACCESS_TOKEN_SCOPE_INSUFFICIENT|IAM_PERMISSION_DENIED|PERMISSION_DENIED)\b/);
 		throw new ReviewSourceError(source, {
 			...(status ? { http_status: Number(status[1]) } : {}),
 			...(code ? { api_code: Number(code[1]) } : {}),
@@ -339,7 +339,12 @@ async function ga4Summary(env: Env, startDate: string, endDate: string): Promise
 		}),
 	});
 	const data: any = await response.json();
-	if (!response.ok) throw new Error(`GA4 Data API failed (${response.status}): ${JSON.stringify(data?.error || {})}`);
+	if (!response.ok) {
+		const reasons = (Array.isArray(data?.error?.details) ? data.error.details : []).map((detail: any) => detail?.reason);
+		const reason = reasons.find((value: unknown) => typeof value === "string" && /^(SERVICE_DISABLED|API_DISABLED|ACCESS_TOKEN_SCOPE_INSUFFICIENT|IAM_PERMISSION_DENIED)$/.test(value))
+			|| (data?.error?.status === "PERMISSION_DENIED" ? "PERMISSION_DENIED" : "unknown");
+		throw new Error(`GA4 Data API failed (${response.status}): ${reason}`);
+	}
 	const values = data.rows?.[0]?.metricValues || [];
 	return {
 		transactions: asNumber(values[0]?.value),
