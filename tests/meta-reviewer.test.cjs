@@ -208,3 +208,36 @@ test('zero-purchase account is flagged even when previous CPA/ROAS are absent', 
   assert.equal(report.status, 'RED');
   assert.ok(report.findings.some(f => f.id === 'account-zero-purchases'));
 });
+
+test('GA4 uses the complete UA credential set rather than generic credentials', async () => {
+  const calls = mockApis();
+  const result = await handle(request('dry-run', range), { ...env, GOOGLE_UA_CLIENT_ID: 'ua-id', GOOGLE_UA_CLIENT_SECRET: 'ua-secret', GOOGLE_UA_REFRESH_TOKEN: 'ua-refresh' });
+  assert.equal(result.status, 200);
+  const refreshes = calls.filter(c => c.url.hostname === 'oauth2.googleapis.com');
+  assert.equal(refreshes.length, 2);
+  for (const call of refreshes) {
+    assert.equal(call.init.body.get('client_id'), 'ua-id');
+    assert.equal(call.init.body.get('client_secret'), 'ua-secret');
+    assert.equal(call.init.body.get('refresh_token'), 'ua-refresh');
+  }
+});
+test('partial UA credentials fail closed without falling back to a different Google account', async () => {
+  const calls = mockApis();
+  const configured = { ...env, GOOGLE_UA_CLIENT_ID: 'ua-id' };
+  const health = await (await handle(request('health'), configured)).json();
+  assert.equal(health.ga4, false);
+  const result = await handle(request('dry-run', range), configured);
+  assert.equal(result.status, 502);
+  assert.match((await result.json()).source, /^ga4_/);
+  assert.equal(calls.some(c => c.url.hostname === 'oauth2.googleapis.com'), false);
+});
+test('isolated preview exposes only authenticated health and dry-run with side effects forced off', async () => {
+  const preview = require('../src/meta-review-preview.ts').default;
+  for (const path of ['/mcp', '/telegram/webhook', '/internal/meta-review/run', '/internal/meta-review/history']) {
+    assert.equal((await preview.fetch(new Request(`https://test${path}`), env)).status, 404);
+  }
+  assert.equal((await preview.fetch(new Request('https://test/internal/meta-review/health'), env)).status, 401);
+  const health = await (await preview.fetch(request('health'), { ...env, META_REVIEW_ENABLED: 'true', META_REVIEW_TELEGRAM_ENABLED: 'true' })).json();
+  assert.equal(health.scheduledEnabled, false);
+  assert.equal(health.telegramEnabled, false);
+});

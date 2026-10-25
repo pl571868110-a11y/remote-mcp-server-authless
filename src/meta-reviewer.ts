@@ -10,6 +10,25 @@ type ReviewSeverity = "info" | "warning" | "critical";
 type ReviewStatus = "GREEN" | "YELLOW" | "RED";
 type ReportType = "preliminary" | "final" | "on_demand";
 
+class ReviewSourceError extends Error {
+	constructor(readonly source: string) { super(`Review source failed: ${source}`); }
+}
+
+async function withReviewSource<T>(source: string, task: () => Promise<T>): Promise<T> {
+	try { return await task(); }
+	catch { throw new ReviewSourceError(source); }
+}
+
+function googleCredentials(env: Env) {
+	// Never mix UA and generic credentials, or silently switch accounts for a partial UA configuration.
+	const ua = Boolean(env.GOOGLE_UA_CLIENT_ID || env.GOOGLE_UA_CLIENT_SECRET || env.GOOGLE_UA_REFRESH_TOKEN);
+	return {
+		clientId: ua ? env.GOOGLE_UA_CLIENT_ID : env.GOOGLE_CLIENT_ID,
+		clientSecret: ua ? env.GOOGLE_UA_CLIENT_SECRET : env.GOOGLE_CLIENT_SECRET,
+		refreshToken: ua ? env.GOOGLE_UA_REFRESH_TOKEN : env.GOOGLE_REFRESH_TOKEN,
+	};
+}
+
 export function validReviewRange(start: unknown, end: unknown): boolean {
 	const validDate = (value: unknown): value is string => {
 		if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -271,13 +290,14 @@ async function shopifySalesSummary(env: Env, startDate: string, endDate: string)
 }
 
 async function googleAccessToken(env: Env): Promise<string> {
-	if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.GOOGLE_REFRESH_TOKEN) {
+	const { clientId, clientSecret, refreshToken } = googleCredentials(env);
+	if (!clientId || !clientSecret || !refreshToken) {
 		throw new Error("Google OAuth credentials are not configured");
 	}
 	const body = new URLSearchParams({
-		client_id: env.GOOGLE_CLIENT_ID,
-		client_secret: env.GOOGLE_CLIENT_SECRET,
-		refresh_token: env.GOOGLE_REFRESH_TOKEN,
+		client_id: clientId,
+		client_secret: clientSecret,
+		refresh_token: refreshToken,
 		grant_type: "refresh_token",
 	});
 	const response = await fetch("https://oauth2.googleapis.com/token", {
@@ -541,7 +561,7 @@ function formatTelegram(review: Omit<MetaReview, "telegramMessage">): string {
 export async function buildMetaReview(env: Env, startDate: string, endDate: string, reportType: ReportType): Promise<MetaReview> {
 	if (!validReviewRange(startDate, endDate)) throw new Error("Invalid date range (maximum 31 days)");
 	if (!env.META_ACCESS_TOKEN) throw new Error("META_ACCESS_TOKEN is not configured");
-	const metaContext = await metaAccountContext(env);
+	const metaContext = await withReviewSource("meta_context", () => metaAccountContext(env));
 	const previous = previousRange(startDate, endDate);
 	const priorWeeks = Array.from({ length: 4 }, (_, index) => {
 		const shift = (index + 1) * 7;
@@ -560,17 +580,17 @@ export async function buildMetaReview(env: Env, startDate: string, endDate: stri
 		changeHistory,
 		...baselineRows
 	] = await Promise.all([
-		metaAccountSummary(env, startDate, endDate),
-		metaAccountSummary(env, previous.start, previous.end),
-		shopifySalesSummary(env, startDate, endDate),
-		shopifySalesSummary(env, previous.start, previous.end),
-		ga4Summary(env, startDate, endDate),
-		ga4Summary(env, previous.start, previous.end),
-		metaPerformance(env, "campaign", startDate, endDate),
-		metaPerformance(env, "adset", startDate, endDate),
-		metaPerformance(env, "ad", startDate, endDate),
+		withReviewSource("meta_current", () => metaAccountSummary(env, startDate, endDate)),
+		withReviewSource("meta_previous", () => metaAccountSummary(env, previous.start, previous.end)),
+		withReviewSource("shopify_current", () => shopifySalesSummary(env, startDate, endDate)),
+		withReviewSource("shopify_previous", () => shopifySalesSummary(env, previous.start, previous.end)),
+		withReviewSource("ga4_current", () => ga4Summary(env, startDate, endDate)),
+		withReviewSource("ga4_previous", () => ga4Summary(env, previous.start, previous.end)),
+		withReviewSource("meta_campaigns", () => metaPerformance(env, "campaign", startDate, endDate)),
+		withReviewSource("meta_adsets", () => metaPerformance(env, "adset", startDate, endDate)),
+		withReviewSource("meta_ads", () => metaPerformance(env, "ad", startDate, endDate)),
 		metaChangeHistory(env, startDate, endDate),
-		...priorWeeks.map((range) => metaAccountSummary(env, range.start, range.end)),
+		...priorWeeks.map((range) => withReviewSource("meta_baseline", () => metaAccountSummary(env, range.start, range.end))),
 	]);
 	const findings = collectFindings(env, meta, metaPrevious, shopify, shopifyPrevious, ga4, campaigns, changeHistory);
 	const status = statusFromFindings(findings);
@@ -739,7 +759,8 @@ export async function handleMetaReviewRequest(request: Request, env: Env): Promi
 		}
 		const meta = Boolean(env.META_ACCESS_TOKEN);
 		const shopify = Boolean(env.SHOPIFY_SHOP && env.SHOPIFY_CLIENT_ID && env.SHOPIFY_CLIENT_SECRET);
-		const ga4 = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN);
+		const google = googleCredentials(env);
+		const ga4 = Boolean(google.clientId && google.clientSecret && google.refreshToken);
 		const telegram = Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_ALLOWED_CHAT_ID && env.TELEGRAM_WEBHOOK_SECRET);
 		return jsonResponse({ ok: meta && shopify && ga4 && d1Schema, meta, shopify, ga4, telegram, d1: Boolean(env.META_REVIEW_DB), d1Schema, dryRunReady: meta && shopify && ga4, scheduledEnabled: env.META_REVIEW_ENABLED === "true", telegramEnabled: env.META_REVIEW_TELEGRAM_ENABLED === "true", credentialChecks: "presence only; dry-run verifies API access" });
 	}
@@ -756,8 +777,8 @@ export async function handleMetaReviewRequest(request: Request, env: Env): Promi
 		try {
 			const review = dryRun ? await buildMetaReview(env, range.start, range.end, "on_demand") : await runReview(env, range.start, range.end, "on_demand", body.send_telegram === true);
 			return jsonResponse(review);
-		} catch {
-			return jsonResponse({ error: "Review failed; verify upstream credentials, permissions and API availability" }, 502);
+		} catch (error) {
+			return jsonResponse({ error: "Review failed; verify upstream credentials, permissions and API availability", ...(error instanceof ReviewSourceError ? { source: error.source } : {}) }, 502);
 		}
 	}
 	if (url.pathname === "/internal/meta-review/latest" && request.method === "GET") {

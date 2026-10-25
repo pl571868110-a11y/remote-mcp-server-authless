@@ -7,6 +7,10 @@ SHOPIFY_CLIENT_SECRET=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 GOOGLE_REFRESH_TOKEN=
+# If any UA-specific value is set, all three must be filled; generic credentials are not mixed in.
+GOOGLE_UA_CLIENT_ID=
+GOOGLE_UA_CLIENT_SECRET=
+GOOGLE_UA_REFRESH_TOKEN=
 META_REVIEW_INTERNAL_TOKEN=
 # Leave side effects disabled during validation.
 META_REVIEW_ENABLED=false

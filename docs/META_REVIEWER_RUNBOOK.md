@@ -4,9 +4,9 @@
 
 PR #2 remains draft. No production deploy or merge was performed during this audit.
 The configured D1 is `pcc-meta-reviewer`, ID `2e906996-8722-42a7-8dd6-266fe5df2644`, binding `META_REVIEW_DB`.
-Creation and migration 0001 are recorded in the previous PR discussion; this session
-has no authenticated Cloudflare CLI session, so remote state/secrets were not independently rechecked.
-Migration 0002 is new and must be applied before enabling delivery.
+Creation and migration 0001 are recorded in the previous PR discussion. Recheck
+the intended remote version and D1 migration state before activation.
+Migration 0002 must be applied before enabling delivery.
 
 ## First action: unblock direct Meta access
 
@@ -44,6 +44,13 @@ the same ignored file, then run:
 ```powershell
 npm run meta:dry-run -- --full
 ```
+
+Prefer `GOOGLE_UA_CLIENT_ID`, `GOOGLE_UA_CLIENT_SECRET`, and `GOOGLE_UA_REFRESH_TOKEN`
+for the UA property. If any UA value is configured, all three are required; the reviewer
+does not mix them with generic Google credentials. When none are configured, it uses
+the complete generic `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REFRESH_TOKEN` set.
+The health response checks the same selected set. Failed dry-runs return only a safe
+source label (for example `ga4_current`), without upstream error bodies or secrets.
 
 Both modes perform API reads and token exchanges only. Neither mode writes D1,
 sends Telegram, installs cron, uploads a Worker version, or deploys production.
@@ -109,6 +116,23 @@ Do not enable it until full validation is accepted. With Telegram disabled, enab
 cron saves snapshots only. Sunday data is preliminary because the day is incomplete.
 Monday records the completed week. The four-week baseline is descriptive; performance
 alerts compare the current period with the preceding period of equal calendar length.
+
+## Isolated Cloudflare preview validation
+
+`src/meta-review-preview.ts` is a validation-only entry point. It exposes only
+authenticated `/internal/meta-review/health` and `/internal/meta-review/dry-run`.
+All other routes, including public MCP, `/run`, history and Telegram, return 404.
+It has no scheduled handler and forces schedule/delivery flags off.
+Never deploy this entry point to production.
+
+Uploading secrets to Cloudflare requires explicit approval for that destination.
+Use a locally generated preview internal token, separate from the production control
+token. Keep the staging JSON inside ignored `.wrangler/`; never print it or commit it.
+After approval, use `wrangler versions upload src/meta-review-preview.ts --keep-vars
+--secrets-file <ignored staging file> --preview-alias meta-review-validation`.
+This creates a version URL without moving production traffic or installing cron.
+Recheck production deployments afterward. Existing Shopify/Google secrets stay on
+Cloudflare; their values need not be downloaded or revealed for this validation.
 
 ## Optional Telegram activation
 
