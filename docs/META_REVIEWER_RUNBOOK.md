@@ -2,13 +2,17 @@
 
 ## Current state (2026-10-25)
 
-PR #2 remains draft. No production deploy or merge was performed during this audit.
+Production activation was explicitly authorized and completed after full preview
+validation. The full Worker exports `fetch` and `scheduled`, both D1 bindings are
+installed, `META_REVIEW_ENABLED=true`, and Telegram delivery remains disabled.
+The first authenticated production report was saved and read back from D1.
+PR #2 remains draft; no merge was performed.
 The configured D1 is `pcc-meta-reviewer`, ID `2e906996-8722-42a7-8dd6-266fe5df2644`, binding `META_REVIEW_DB`.
-Creation and migration 0001 are recorded in the previous PR discussion. Recheck
-the intended remote version and D1 migration state before activation.
-Migration 0002 must be applied before enabling delivery.
+Migrations 0001 and 0002 are applied. The existing `PCC_CFO_DB` binding is restored
+to its original database; this does not claim to restore CFO routes absent from
+the previously active Worker. Existing legacy route modules are preserved.
 
-## First action: unblock direct Meta access
+## Meta access setup and renewal
 
 In Meta Business Settings for `petschoice.club`, the second administrator must
 approve token generation for system user `PCC_Reviewer` through `PetsChoice Finance`.
@@ -121,8 +125,10 @@ Ordinary secret writes deploy immediately; use the versions variant to stage sec
 
 The four existing UTC cron expressions are correct for Warsaw summer/winter time:
 Sunday 18/19 UTC (local 20:00) and Monday 06/07 UTC (local 08:00).
-`META_REVIEW_ENABLED` defaults to `false`, so scheduled invocations do nothing.
-Do not enable it until full validation is accepted. With Telegram disabled, enabled
+Use named weekdays (`SUN` and `MON`): Cloudflare rejected numeric Sunday `0`.
+The handler remains disabled when `META_REVIEW_ENABLED` is absent or false;
+the production configuration now explicitly enables it after accepted validation.
+With Telegram disabled, enabled
 cron saves snapshots only. Sunday data is preliminary because the day is incomplete.
 Monday records the completed week. The four-week baseline is descriptive; performance
 alerts compare the current period with the preceding period of equal calendar length.

@@ -128,6 +128,12 @@ test('webhook requires secret and exact allowlisted chat', async () => {
   assert.equal((await handle(post('hook', '-999'), configured)).status, 200);
   assert.equal((await handle(post('hook', '-123'), { ...configured, META_REVIEW_TELEGRAM_ENABLED: 'false' })).status, 503);
 });
+test('configured Cloudflare cron uses explicit Sunday and Monday names', () => {
+  const raw = fs.readFileSync(path.join(__dirname, '../wrangler.jsonc'), 'utf8');
+  const config = JSON.parse(raw.slice(raw.indexOf('{')));
+  assert.deepEqual(config.triggers.crons, ['0 18 * * SUN', '0 19 * * SUN', '0 6 * * MON', '0 7 * * MON']);
+});
+
 test('cron is disabled by default; Warsaw DST selects exactly one Sunday and Monday UTC trigger', async () => {
   global.fetch = () => assert.fail('must not fetch');
   const configured = { META_REVIEW_ENABLED: 'true' }; // matching schedule fails fast for missing token
