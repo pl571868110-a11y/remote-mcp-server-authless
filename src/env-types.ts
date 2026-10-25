@@ -24,6 +24,7 @@ declare global {
 		GOOGLE_UA_CLIENT_ID?: string;
 		GOOGLE_UA_CLIENT_SECRET?: string;
 		GOOGLE_UA_REFRESH_TOKEN?: string;
+		META_REVIEW_GOOGLE_SOURCE?: string;
 		GA4_UA_PROPERTY_ID?: string;
 
 		// Meta Contractor Reviewer — read-only Meta Marketing API.

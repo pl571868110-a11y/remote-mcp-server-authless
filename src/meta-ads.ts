@@ -72,7 +72,7 @@ async function graphGet(
 	const token = requireToken(env);
 	const url = new URL(`https://graph.facebook.com/${apiVersion(env)}/${path}`);
 	for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-	const response = await fetch(url.toString(), { method: "GET", headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000), redirect: "error" });
+	const response = await fetch(url.toString(), { method: "GET", headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000), redirect: "manual" });
 	const raw = await response.text();
 	let data: any;
 	try {
@@ -99,7 +99,7 @@ async function graphGetAll(
 		const nextUrl = new URL(next);
 		if (nextUrl.origin !== "https://graph.facebook.com" || nextUrl.pathname !== `/${apiVersion(env)}/${path}`) throw new Error("Unexpected Meta pagination URL");
 		nextUrl.searchParams.delete("access_token");
-		const response = await fetch(nextUrl.toString(), { method: "GET", headers: { Authorization: `Bearer ${requireToken(env)}` }, signal: AbortSignal.timeout(30000), redirect: "error" });
+		const response = await fetch(nextUrl.toString(), { method: "GET", headers: { Authorization: `Bearer ${requireToken(env)}` }, signal: AbortSignal.timeout(30000), redirect: "manual" });
 		const raw = await response.text();
 		let data: any;
 		try {

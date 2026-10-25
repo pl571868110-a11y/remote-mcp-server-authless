@@ -51,6 +51,16 @@ does not mix them with generic Google credentials. When none are configured, it 
 the complete generic `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GOOGLE_REFRESH_TOKEN` set.
 The health response checks the same selected set. Failed dry-runs return only a safe
 source label (for example `ga4_current`), without upstream error bodies or secrets.
+Set `META_REVIEW_GOOGLE_SOURCE=ua` or `generic` only to deliberately select a complete
+credential set; the default `auto` prefers UA when configured. This does not change
+the GA4 property ID. Invalid selector values fail readiness checks.
+
+`POST /internal/meta-review/preflight` accepts the same dates as dry-run. It probes
+Meta context/current summary, Shopify current/previous cohorts, and GA4 independently,
+so one failing source does not hide the others. It never saves reports or sends Telegram.
+Diagnostics contain only fixed categories, HTTP status, numeric API codes, and an
+allowlisted OAuth error name. `invalid_grant` requires a renewed OAuth authorization;
+it does not prove whether the grant expired, was revoked, or became invalid for another reason.
 
 Both modes perform API reads and token exchanges only. Neither mode writes D1,
 sends Telegram, installs cron, uploads a Worker version, or deploys production.
@@ -120,7 +130,7 @@ alerts compare the current period with the preceding period of equal calendar le
 ## Isolated Cloudflare preview validation
 
 `src/meta-review-preview.ts` is a validation-only entry point. It exposes only
-authenticated `/internal/meta-review/health` and `/internal/meta-review/dry-run`.
+authenticated `/internal/meta-review/health`, `/internal/meta-review/preflight`, and `/internal/meta-review/dry-run`.
 All other routes, including public MCP, `/run`, history and Telegram, return 404.
 It has no scheduled handler and forces schedule/delivery flags off.
 Never deploy this entry point to production.
@@ -133,6 +143,15 @@ After approval, use `wrangler versions upload src/meta-review-preview.ts --keep-
 This creates a version URL without moving production traffic or installing cron.
 Recheck production deployments afterward. Existing Shopify/Google secrets stay on
 Cloudflare; their values need not be downloaded or revealed for this validation.
+If Version URLs are protected by Cloudflare Access, keep that protection in place.
+An authenticated `wrangler dev src/meta-review-preview.ts --remote --ip 127.0.0.1 --port 8791`
+session can validate through localhost using the same internal header. This is temporary
+development execution, not a production deployment. Stop the session after testing.
+
+Before any future production activation, reconcile this older PR with the active
+Worker's code and complete binding inventory. In particular, preserve existing
+non-reviewer D1 bindings and existing route authentication. An isolated reviewer
+preview does not establish compatibility of a full Worker replacement.
 
 ## Optional Telegram activation
 
@@ -169,3 +188,5 @@ The separate contractor-action table is reserved for future reconciliation and i
 - [Cloudflare secret staging and immediate-deploy behavior](https://developers.cloudflare.com/workers/configuration/secrets/)
 - [Cloudflare version/deployment separation](https://developers.cloudflare.com/workers/versions-and-deployments/)
 - [Shopify Order fields and historical-order access](https://shopify.dev/docs/api/admin-graphql/2026-07/objects/Order)
+- [Shopify quoted date-search syntax](https://shopify.dev/docs/api/usage/search-syntax)
+- [Google refresh-token expiration and reauthorization](https://developers.google.com/identity/protocols/oauth2)

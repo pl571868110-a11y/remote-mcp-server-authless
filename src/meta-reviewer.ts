@@ -11,17 +11,31 @@ type ReviewStatus = "GREEN" | "YELLOW" | "RED";
 type ReportType = "preliminary" | "final" | "on_demand";
 
 class ReviewSourceError extends Error {
-	constructor(readonly source: string) { super(`Review source failed: ${source}`); }
+	constructor(readonly source: string, readonly diagnostic?: { http_status?: number; api_code?: number; kind?: string; provider_error?: string }) { super(`Review source failed: ${source}`); }
 }
 
 async function withReviewSource<T>(source: string, task: () => Promise<T>): Promise<T> {
 	try { return await task(); }
-	catch { throw new ReviewSourceError(source); }
+	catch (error) {
+		// Return only numeric status/codes and a fixed category; never upstream text or credentials.
+		const message = error instanceof Error ? error.message : "";
+		const status = message.match(/(?:Meta API |Meta pagination |failed \()(\d{3})/);
+		const code = message.match(/\bcode (\d+)\b/);
+		const providerError = message.match(/\b(invalid_grant|invalid_client|unauthorized_client|invalid_scope|access_denied)\b/);
+		throw new ReviewSourceError(source, {
+			...(status ? { http_status: Number(status[1]) } : {}),
+			...(code ? { api_code: Number(code[1]) } : {}),
+			...(providerError ? { provider_error: providerError[1] } : {}),
+			kind: /Google token refresh/.test(message) ? "google_token_refresh" : /GA4 Data API/.test(message) ? "ga4_report" : /not configured/.test(message) ? "configuration" : /currency|timezone/.test(message) ? "account_context" : status ? "upstream_http" : "upstream_request",
+		});
+	}
 }
 
 function googleCredentials(env: Env) {
 	// Never mix UA and generic credentials, or silently switch accounts for a partial UA configuration.
-	const ua = Boolean(env.GOOGLE_UA_CLIENT_ID || env.GOOGLE_UA_CLIENT_SECRET || env.GOOGLE_UA_REFRESH_TOKEN);
+	const mode = env.META_REVIEW_GOOGLE_SOURCE || "auto";
+	if (!["auto", "ua", "generic"].includes(mode)) return { clientId: undefined, clientSecret: undefined, refreshToken: undefined };
+	const ua = mode === "ua" || (mode === "auto" && Boolean(env.GOOGLE_UA_CLIENT_ID || env.GOOGLE_UA_CLIENT_SECRET || env.GOOGLE_UA_REFRESH_TOKEN));
 	return {
 		clientId: ua ? env.GOOGLE_UA_CLIENT_ID : env.GOOGLE_CLIENT_ID,
 		clientSecret: ua ? env.GOOGLE_UA_CLIENT_SECRET : env.GOOGLE_CLIENT_SECRET,
@@ -254,7 +268,7 @@ async function shopifySalesSummary(env: Env, startDate: string, endDate: string)
 	const timeZone = String(identity.shop.ianaTimezone || "Europe/Kyiv");
 	const startInstant = localMidnightUtcIso(startDate, timeZone);
 	const endExclusiveInstant = localMidnightUtcIso(addDays(endDate, 1), timeZone);
-	const search = `created_at:>=${startInstant} created_at:<${endExclusiveInstant}`;
+	const search = `created_at:>='${startInstant}' created_at:<'${endExclusiveInstant}'`;
 	const query = `query ReviewOrders($query: String!, $after: String) {
 		orders(first: 100, after: $after, query: $query, sortKey: CREATED_AT) {
 			nodes {
@@ -306,7 +320,10 @@ async function googleAccessToken(env: Env): Promise<string> {
 		body,
 	});
 	const data: any = await response.json();
-	if (!response.ok || !data?.access_token) throw new Error(`Google token refresh failed (${response.status})`);
+	if (!response.ok || !data?.access_token) {
+		const code = typeof data?.error === "string" && /^(invalid_grant|invalid_client|unauthorized_client|invalid_scope|access_denied)$/.test(data.error) ? data.error : "unknown";
+		throw new Error(`Google token refresh failed (${response.status}): ${code}`);
+	}
 	return String(data.access_token);
 }
 
@@ -558,6 +575,22 @@ function formatTelegram(review: Omit<MetaReview, "telegramMessage">): string {
 	].join("\n").slice(0, 4000);
 }
 
+export async function probeMetaReviewSources(env: Env, startDate: string, endDate: string) {
+	const previous = previousRange(startDate, endDate);
+	const probes: Array<[string, () => Promise<unknown>]> = [
+		["meta_context", () => metaAccountContext(env)],
+		["meta_current", () => metaAccountSummary(env, startDate, endDate)],
+		["shopify_current", () => shopifySalesSummary(env, startDate, endDate)],
+		["shopify_previous", () => shopifySalesSummary(env, previous.start, previous.end)],
+		["ga4_current", () => ga4Summary(env, startDate, endDate)],
+	];
+	const results = await Promise.allSettled(probes.map(([source, task]) => withReviewSource(source, task)));
+	const sources = Object.fromEntries(results.map((result, index) => [probes[index][0], result.status === "fulfilled"
+		? { ok: true, summary: result.value }
+		: { ok: false, diagnostic: result.reason instanceof ReviewSourceError ? result.reason.diagnostic : { kind: "upstream_request" } }]));
+	return { ok: results.every(result => result.status === "fulfilled"), sources, persisted: false, telegramSent: false };
+}
+
 export async function buildMetaReview(env: Env, startDate: string, endDate: string, reportType: ReportType): Promise<MetaReview> {
 	if (!validReviewRange(startDate, endDate)) throw new Error("Invalid date range (maximum 31 days)");
 	if (!env.META_ACCESS_TOKEN) throw new Error("META_ACCESS_TOKEN is not configured");
@@ -764,21 +797,23 @@ export async function handleMetaReviewRequest(request: Request, env: Env): Promi
 		const telegram = Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_ALLOWED_CHAT_ID && env.TELEGRAM_WEBHOOK_SECRET);
 		return jsonResponse({ ok: meta && shopify && ga4 && d1Schema, meta, shopify, ga4, telegram, d1: Boolean(env.META_REVIEW_DB), d1Schema, dryRunReady: meta && shopify && ga4, scheduledEnabled: env.META_REVIEW_ENABLED === "true", telegramEnabled: env.META_REVIEW_TELEGRAM_ENABLED === "true", credentialChecks: "presence only; dry-run verifies API access" });
 	}
-	if (["/internal/meta-review/run", "/internal/meta-review/dry-run"].includes(url.pathname) && request.method === "POST") {
+	if (["/internal/meta-review/run", "/internal/meta-review/dry-run", "/internal/meta-review/preflight"].includes(url.pathname) && request.method === "POST") {
 		const body: any = await request.json().catch(() => null);
 		if (!body || typeof body !== "object" || Array.isArray(body)) return jsonResponse({ error: "Invalid JSON object" }, 400);
 		if (body.send_telegram !== undefined && typeof body.send_telegram !== "boolean") return jsonResponse({ error: "send_telegram must be a boolean" }, 400);
 		const range = body.start_date === undefined && body.end_date === undefined ? lastCompletedWeekRange() : { start: body.start_date, end: body.end_date };
 		if (!validReviewRange(range.start, range.end)) return jsonResponse({ error: "Invalid date range (maximum 31 days)" }, 400);
-		const dryRun = url.pathname.endsWith("/dry-run");
+		const preflight = url.pathname.endsWith("/preflight");
+		const dryRun = preflight || url.pathname.endsWith("/dry-run");
 		if (dryRun && body.send_telegram === true) return jsonResponse({ error: "dry-run cannot send Telegram" }, 400);
 		if (!env.META_ACCESS_TOKEN) return jsonResponse({ error: "META_ACCESS_TOKEN is not configured" }, 503);
 		if (!dryRun && body.send_telegram === true && (env.META_REVIEW_TELEGRAM_ENABLED !== "true" || !env.META_REVIEW_DB || !env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_ALLOWED_CHAT_ID)) return jsonResponse({ error: "Telegram delivery is disabled or not configured" }, 503);
 		try {
+			if (preflight) return jsonResponse(await probeMetaReviewSources(env, range.start, range.end));
 			const review = dryRun ? await buildMetaReview(env, range.start, range.end, "on_demand") : await runReview(env, range.start, range.end, "on_demand", body.send_telegram === true);
 			return jsonResponse(review);
 		} catch (error) {
-			return jsonResponse({ error: "Review failed; verify upstream credentials, permissions and API availability", ...(error instanceof ReviewSourceError ? { source: error.source } : {}) }, 502);
+			return jsonResponse({ error: "Review failed; verify upstream credentials, permissions and API availability", ...(error instanceof ReviewSourceError ? { source: error.source, diagnostic: error.diagnostic } : {}) }, 502);
 		}
 	}
 	if (url.pathname === "/internal/meta-review/latest" && request.method === "GET") {

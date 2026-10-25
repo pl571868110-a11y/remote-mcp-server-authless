@@ -43,7 +43,7 @@ function mockApis() {
       const { query, variables } = JSON.parse(init.body);
       assert.ok(!query.includes('mutation'));
       if (query.includes('ReviewShopContext')) return response({ data: { shop: { currencyCode: 'UAH', ianaTimezone: 'Europe/Kyiv' } } });
-      assert.match(variables.query, /created_at:>=2026-/);
+      assert.match(variables.query, /^created_at:>='2026-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z' created_at:<'2026-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z'$/);
       const node = { id: 'order', test: false, cancelledAt: null, totalPriceSet: { shopMoney: { amount: '100' } }, currentTotalPriceSet: { shopMoney: { amount: '90' } }, totalRefundedSet: { shopMoney: { amount: '10' } } };
       return response({ data: { orders: { nodes: [node, { ...node, test: true }], pageInfo: { hasNextPage: !variables.after, endCursor: variables.after ? null : 'next' } } } });
     }
@@ -240,4 +240,35 @@ test('isolated preview exposes only authenticated health and dry-run with side e
   const health = await (await preview.fetch(request('health'), { ...env, META_REVIEW_ENABLED: 'true', META_REVIEW_TELEGRAM_ENABLED: 'true' })).json();
   assert.equal(health.scheduledEnabled, false);
   assert.equal(health.telegramEnabled, false);
+});
+
+test('preflight independently reports successful sources and safe Google OAuth failure', async () => {
+  mockApis();
+  const upstream = global.fetch;
+  global.fetch = async (url, init) => new URL(url).hostname === 'oauth2.googleapis.com'
+    ? new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'sensitive-echo' }), { status: 400 })
+    : upstream(url, init);
+  const result = await handle(request('preflight', range), { ...env, META_REVIEW_DB: { prepare() { assert.fail('preflight must not access D1'); } } });
+  assert.equal(result.status, 200);
+  const report = await result.json();
+  assert.equal(report.ok, false);
+  assert.equal(report.sources.meta_current.ok, true);
+  assert.equal(report.sources.shopify_current.ok, true);
+  assert.equal(report.sources.ga4_current.ok, false);
+  assert.deepEqual(report.sources.ga4_current.diagnostic, { http_status: 400, provider_error: 'invalid_grant', kind: 'google_token_refresh' });
+  assert.equal(JSON.stringify(report).includes('sensitive-echo'), false);
+  assert.equal(report.persisted, false);
+  assert.equal(report.telegramSent, false);
+});
+
+test('generic Google credentials require explicit selection when UA credentials exist', async () => {
+  const calls = mockApis();
+  const result = await handle(request('dry-run', range), { ...env, GOOGLE_UA_CLIENT_ID: 'ua-id', META_REVIEW_GOOGLE_SOURCE: 'generic' });
+  assert.equal(result.status, 200);
+  for (const call of calls.filter(c => c.url.hostname === 'oauth2.googleapis.com')) {
+    assert.equal(call.init.body.get('client_id'), env.GOOGLE_CLIENT_ID);
+    assert.equal(call.init.body.get('refresh_token'), env.GOOGLE_REFRESH_TOKEN);
+  }
+  const health = await (await handle(request('health'), { ...env, META_REVIEW_GOOGLE_SOURCE: 'typo' })).json();
+  assert.equal(health.ga4, false);
 });
