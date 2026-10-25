@@ -173,7 +173,13 @@ the existing connector. The Reviewer branch now preserves that deployed behavior
 with mocked upstream responses and checks both admin-token and client-credentials
 authentication. It does not call a real store or expose credentials.
 
-At this audit the five legacy route modules match the recovered production sources.
+During launch the configured admin token was rejected with HTTP 401. Existing
+client credentials successfully read store identity in an isolated preview.
+The connector now retries once through those existing credentials only after
+an admin-token 401; valid admin tokens keep their original behavior. The runtime
+test covers this recovery path as well as both ordinary authentication paths.
+
+Before the 401 recovery fix the five legacy route modules matched the recovered production sources.
 The wrapper adds Reviewer routing and scheduling. The earlier production baseline
 had different bindings; do not infer that absent CFO functionality has been migrated
 or restored. Re-read the active deployment and bindings immediately before any

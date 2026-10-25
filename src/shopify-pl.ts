@@ -28,8 +28,8 @@ function normalizedShopDomain(raw: string): string {
 	return value;
 }
 
-async function getShopifyAccessToken(): Promise<string> {
-	if (currentEnv.SHOPIFY_PL_ADMIN_TOKEN) return currentEnv.SHOPIFY_PL_ADMIN_TOKEN;
+async function getShopifyAccessToken(skipAdminToken = false): Promise<string> {
+	if (!skipAdminToken && currentEnv.SHOPIFY_PL_ADMIN_TOKEN) return currentEnv.SHOPIFY_PL_ADMIN_TOKEN;
 	if (!currentEnv.SHOPIFY_PL_SHOP || !currentEnv.SHOPIFY_PL_CLIENT_ID || !currentEnv.SHOPIFY_PL_CLIENT_SECRET) {
 		throw new Error(
 			"SHOPIFY_PL_SHOP / SHOPIFY_PL_CLIENT_ID / SHOPIFY_PL_CLIENT_SECRET are not configured in Cloudflare Worker secrets",
@@ -74,14 +74,18 @@ async function shopifyGraphql(query: string, variables: Record<string, unknown> 
 	}
 	const shop = normalizedShopDomain(currentEnv.SHOPIFY_PL_SHOP);
 	const token = await getShopifyAccessToken();
-	const res = await fetch(`https://${shop}/admin/api/2026-07/graphql.json`, {
+	const send = (accessToken: string) => fetch(`https://${shop}/admin/api/2026-07/graphql.json`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
-			"X-Shopify-Access-Token": token,
+			"X-Shopify-Access-Token": accessToken,
 		},
 		body: JSON.stringify({ query, variables }),
 	});
+	let res = await send(token);
+	if (res.status === 401 && currentEnv.SHOPIFY_PL_ADMIN_TOKEN && currentEnv.SHOPIFY_PL_CLIENT_ID && currentEnv.SHOPIFY_PL_CLIENT_SECRET) {
+		res = await send(await getShopifyAccessToken(true));
+	}
 
 	const raw = await res.text();
 	let data: any;
