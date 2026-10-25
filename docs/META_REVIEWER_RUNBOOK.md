@@ -153,6 +153,32 @@ Worker's code and complete binding inventory. In particular, preserve existing
 non-reviewer D1 bindings and existing route authentication. An isolated reviewer
 preview does not establish compatibility of a full Worker replacement.
 
+### Compatibility audit (2026-10-25)
+
+The observed active Worker exports only `fetch`: Reviewer routes, the scheduled
+handler and D1 bindings are absent. Secret presence and successful preview reads
+do not mean the Reviewer is installed in production. Its enable flags remain false.
+
+Source recovered from the default production environment includes the Shopify PL
+admin-token path (`SHOPIFY_PL_ADMIN_TOKEN`, connector version 1.1.4). Preserve it:
+removing it would force an unrelated client-credentials exchange and could break
+the existing connector. The Reviewer branch now preserves that deployed behavior.
+`tests/shopify-compatibility.test.cjs` invokes the MCP store-identity tool in Workers
+with mocked upstream responses and checks both admin-token and client-credentials
+authentication. It does not call a real store or expose credentials.
+
+At this audit the five legacy route modules match the recovered production sources.
+The wrapper adds Reviewer routing and scheduling. The earlier production baseline
+had different bindings; do not infer that absent CFO functionality has been migrated
+or restored. Re-read the active deployment and bindings immediately before any
+future authorized deployment, and retain any concurrent changes.
+
+Google OAuth publication and reauthorization have been completed; the new UA token
+passed the full preview dry-run. Google publication is separate from deploying the
+Worker and does not itself activate schedules or Telegram. New tokens are staged
+only in inactive versions. Promote only a reviewed full Worker entry point with
+the intended D1 binding; never promote either temporary validation entry point.
+
 ## Optional Telegram activation
 
 Telegram is not required for either dry-run. Delivery stays disabled by default.
