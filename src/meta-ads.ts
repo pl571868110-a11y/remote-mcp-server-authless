@@ -72,17 +72,16 @@ async function graphGet(
 	const token = requireToken(env);
 	const url = new URL(`https://graph.facebook.com/${apiVersion(env)}/${path}`);
 	for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-	url.searchParams.set("access_token", token);
-	const response = await fetch(url.toString(), { method: "GET" });
+	const response = await fetch(url.toString(), { method: "GET", headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000), redirect: "error" });
 	const raw = await response.text();
 	let data: any;
 	try {
 		data = raw ? JSON.parse(raw) : {};
 	} catch {
-		throw new Error(`Meta API ${response.status} returned non-JSON: ${raw.slice(0, 300)}`);
+		throw new Error(`Meta API ${response.status} returned non-JSON`);
 	}
 	if (!response.ok || data?.error) {
-		throw new Error(`Meta API ${response.status}: ${JSON.stringify(data?.error || data)}`);
+		throw new Error(`Meta API ${response.status} (code ${Number(data?.error?.code) || "unknown"})`);
 	}
 	return data;
 }
@@ -97,7 +96,10 @@ async function graphGetAll(
 	let next: string | undefined = first?.paging?.next;
 	let pages = 1;
 	while (next && pages < 50) {
-		const response = await fetch(next, { method: "GET" });
+		const nextUrl = new URL(next);
+		if (nextUrl.origin !== "https://graph.facebook.com" || nextUrl.pathname !== `/${apiVersion(env)}/${path}`) throw new Error("Unexpected Meta pagination URL");
+		nextUrl.searchParams.delete("access_token");
+		const response = await fetch(nextUrl.toString(), { method: "GET", headers: { Authorization: `Bearer ${requireToken(env)}` }, signal: AbortSignal.timeout(30000), redirect: "error" });
 		const raw = await response.text();
 		let data: any;
 		try {
@@ -106,7 +108,7 @@ async function graphGetAll(
 			throw new Error(`Meta pagination ${response.status} returned non-JSON`);
 		}
 		if (!response.ok || data?.error) {
-			throw new Error(`Meta pagination ${response.status}: ${JSON.stringify(data?.error || data)}`);
+			throw new Error(`Meta pagination ${response.status} (code ${Number(data?.error?.code) || "unknown"})`);
 		}
 		if (Array.isArray(data?.data)) rows.push(...data.data);
 		next = data?.paging?.next;
@@ -224,6 +226,13 @@ export async function metaAccountSummary(
 			checkout: 0,
 		}
 	);
+}
+
+export async function metaAccountContext(env: MetaEnv): Promise<{ accountId: string; currency: string; timeZone: string; apiVersion: string }> {
+	const data = await graphGet(env, adAccountId(env), { fields: "id,currency,timezone_name" });
+	if (data.currency !== "UAH") throw new Error("Meta account currency must be UAH for this reviewer");
+	if (typeof data.timezone_name !== "string" || !data.timezone_name) throw new Error("Meta account timezone is missing");
+	return { accountId: String(data.id), currency: data.currency, timeZone: data.timezone_name, apiVersion: apiVersion(env) };
 }
 
 export async function metaChangeHistory(

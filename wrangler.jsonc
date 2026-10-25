@@ -9,6 +9,10 @@
 	"compatibility_date": "2026-07-02",
 	"compatibility_flags": ["nodejs_compat"],
 	"keep_vars": true,
+	"vars": {
+		"META_REVIEW_ENABLED": "false",
+		"META_REVIEW_TELEGRAM_ENABLED": "false"
+	},
 	"d1_databases": [
 		{
 			"binding": "META_REVIEW_DB",

@@ -1,0 +1,13 @@
+# Copy to .dev.vars locally. Never commit real values.
+META_ACCESS_TOKEN=
+# Only needed for --full and the local Worker routes:
+SHOPIFY_SHOP=
+SHOPIFY_CLIENT_ID=
+SHOPIFY_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REFRESH_TOKEN=
+META_REVIEW_INTERNAL_TOKEN=
+# Leave side effects disabled during validation.
+META_REVIEW_ENABLED=false
+META_REVIEW_TELEGRAM_ENABLED=false

@@ -1,5 +1,6 @@
 import {
 	metaAccountSummary,
+	metaAccountContext,
 	metaChangeHistory,
 	metaPerformance,
 	type MetaPerformanceRow,
@@ -8,6 +9,15 @@ import {
 type ReviewSeverity = "info" | "warning" | "critical";
 type ReviewStatus = "GREEN" | "YELLOW" | "RED";
 type ReportType = "preliminary" | "final" | "on_demand";
+
+export function validReviewRange(start: unknown, end: unknown): boolean {
+	const validDate = (value: unknown): value is string => {
+		if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+		const date = new Date(`${value}T00:00:00Z`);
+		return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+	};
+	return validDate(start) && validDate(end) && start <= end && daysInclusive(start, end) <= 31;
+}
 
 export type ReviewFinding = {
 	id: string;
@@ -53,6 +63,7 @@ type Ga4Summary = {
 };
 
 type MetaReview = {
+	metaContext: Awaited<ReturnType<typeof metaAccountContext>>;
 	id: string;
 	reportType: ReportType;
 	periodStart: string;
@@ -237,12 +248,15 @@ async function shopifySalesSummary(env: Env, startDate: string, endDate: string)
 		}
 	}`;
 	const orders: any[] = [];
+	const cursors = new Set<string>();
 	let after: string | null = null;
 	do {
 		const data = await shopifyGraphql(env, query, { query: search, after });
 		orders.push(...(data.orders.nodes || []));
 		after = data.orders.pageInfo.hasNextPage ? data.orders.pageInfo.endCursor : null;
 		if (data.orders.pageInfo.hasNextPage && !after) throw new Error("Shopify pagination returned hasNextPage without endCursor");
+		if (after && cursors.has(after)) throw new Error("Shopify pagination repeated a cursor");
+		if (after) cursors.add(after);
 	} while (after);
 	const realOrders = orders.filter((order) => !order.test);
 	return {
@@ -347,6 +361,14 @@ function collectFindings(
 	changes: Awaited<ReturnType<typeof metaChangeHistory>>,
 ): ReviewFinding[] {
 	const findings: ReviewFinding[] = [];
+	if (meta.spend > 0 && meta.purchases === 0) findings.push({
+		id: "account-zero-purchases",
+		category: "performance",
+		severity: "critical",
+		statement: "Meta recorded spend with zero attributed purchases in this period.",
+		evidence: [{ source: "meta", metric: "spend", current: meta.spend }, { source: "meta", metric: "purchases", current: 0 }],
+		recommendation: "Verify purchase tracking and campaign performance before increasing spend.",
+	});
 	const cpaDelta = pctChange(meta.cpa, previous.cpa);
 	const roasDelta = pctChange(meta.roas, previous.roas);
 	const ctrDelta = pctChange(meta.ctr, previous.ctr);
@@ -409,7 +431,7 @@ function collectFindings(
 		id: "shopify-net-sales",
 		category: "shopify",
 		severity: "warning",
-		statement: `Shopify net sales decreased ${Math.abs(round(shopifyNetDelta) || 0)}% WoW.`,
+		statement: `Shopify current order totals decreased ${Math.abs(round(shopifyNetDelta) || 0)}% WoW.`,
 		evidence: [{ source: "shopify", metric: "net_sales", current: round(shopify.netSales), previous: round(shopifyPrevious.netSales), delta_pct: round(shopifyNetDelta) }],
 		recommendation: "Review reversals/refunds and order quality alongside attributed ad performance.",
 	});
@@ -482,8 +504,9 @@ function formatTelegram(review: Omit<MetaReview, "telegramMessage">): string {
 		"",
 		"SHOPIFY",
 		`Orders: ${review.shopify.orders}`,
-		`Gross sales: ${money(review.shopify.grossSales)} UAH`,
-		`Net sales: ${money(review.shopify.netSales)} UAH`,
+		`Order totals: ${money(review.shopify.grossSales)} ${review.shopify.currency}`,
+		`Current order totals: ${money(review.shopify.netSales)} ${review.shopify.currency}`,
+		`Order cohort totals include shipping/tax; not Shopify Analytics gross/net sales.`,
 		`Refunds: ${money(review.shopify.refunds)} UAH`,
 		"",
 		"TRACKING",
@@ -516,6 +539,9 @@ function formatTelegram(review: Omit<MetaReview, "telegramMessage">): string {
 }
 
 export async function buildMetaReview(env: Env, startDate: string, endDate: string, reportType: ReportType): Promise<MetaReview> {
+	if (!validReviewRange(startDate, endDate)) throw new Error("Invalid date range (maximum 31 days)");
+	if (!env.META_ACCESS_TOKEN) throw new Error("META_ACCESS_TOKEN is not configured");
+	const metaContext = await metaAccountContext(env);
 	const previous = previousRange(startDate, endDate);
 	const priorWeeks = Array.from({ length: 4 }, (_, index) => {
 		const shift = (index + 1) * 7;
@@ -553,6 +579,7 @@ export async function buildMetaReview(env: Env, startDate: string, endDate: stri
 	const contractorQuestions = uniqueStrings(findings.map((finding) => finding.contractor_question), 5);
 	const id = `${reportType}:${startDate}:${endDate}`;
 	const base = {
+		metaContext,
 		id,
 		reportType,
 		periodStart: startDate,
@@ -623,6 +650,7 @@ async function markTelegramSent(env: Env, review: MetaReview): Promise<void> {
 }
 
 async function sendTelegram(env: Env, text: string): Promise<void> {
+	if (env.META_REVIEW_TELEGRAM_ENABLED !== "true") throw new Error("Telegram delivery is disabled");
 	if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_ALLOWED_CHAT_ID) throw new Error("Telegram bot token/chat id are not configured");
 	const response = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
 		method: "POST",
@@ -634,10 +662,16 @@ async function sendTelegram(env: Env, text: string): Promise<void> {
 }
 
 async function runReview(env: Env, start: string, end: string, reportType: ReportType, send: boolean): Promise<MetaReview> {
+	if (send && (!env.META_REVIEW_DB || env.META_REVIEW_TELEGRAM_ENABLED !== "true")) throw new Error("Telegram requires D1 and explicit enablement");
 	const review = await buildMetaReview(env, start, end, reportType);
 	const wasSent = await telegramAlreadySent(env, review);
 	await saveReview(env, review);
 	if (send && !wasSent) {
+		// Keep a failed/ambiguous claim for operator inspection rather than risking duplicate sends.
+		const claim = await env.META_REVIEW_DB!.prepare(
+			"UPDATE meta_weekly_reviews SET telegram_claimed_at=? WHERE id=? AND telegram_sent_at IS NULL AND telegram_claimed_at IS NULL",
+		).bind(new Date().toISOString(), review.id).run();
+		if (claim.meta.changes !== 1) return review;
 		await sendTelegram(env, review.telegramMessage);
 		await markTelegramSent(env, review);
 	}
@@ -653,7 +687,7 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 function internalAuthorized(request: Request, env: Env): boolean {
 	if (!env.META_REVIEW_INTERNAL_TOKEN) return false;
-	const bearer = request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
+	const bearer = request.headers.get("Authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
 	const header = request.headers.get("X-Internal-Token");
 	return bearer === env.META_REVIEW_INTERNAL_TOKEN || header === env.META_REVIEW_INTERNAL_TOKEN;
 }
@@ -662,7 +696,9 @@ async function handleTelegramWebhook(request: Request, env: Env): Promise<Respon
 	if (!env.TELEGRAM_WEBHOOK_SECRET || request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.TELEGRAM_WEBHOOK_SECRET) {
 		return new Response("Forbidden", { status: 403 });
 	}
-	const update: any = await request.json();
+	if (env.META_REVIEW_TELEGRAM_ENABLED !== "true") return new Response("Telegram delivery is disabled", { status: 503 });
+	const update: any = await request.json().catch(() => null);
+	if (!update || typeof update !== "object") return jsonResponse({ error: "Invalid JSON" }, 400);
 	const message = update?.message;
 	const chatId = String(message?.chat?.id ?? "");
 	if (!env.TELEGRAM_ALLOWED_CHAT_ID || chatId !== String(env.TELEGRAM_ALLOWED_CHAT_ID)) return new Response("OK");
@@ -692,14 +728,37 @@ export async function handleMetaReviewRequest(request: Request, env: Env): Promi
 	if (!url.pathname.startsWith("/internal/meta-review/")) return null;
 	if (!internalAuthorized(request, env)) return new Response("Unauthorized", { status: 401 });
 	if (url.pathname === "/internal/meta-review/health") {
-		return jsonResponse({ ok: true, meta: Boolean(env.META_ACCESS_TOKEN), shopify: Boolean(env.SHOPIFY_SHOP && env.SHOPIFY_CLIENT_ID && env.SHOPIFY_CLIENT_SECRET), ga4: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN), telegram: Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_ALLOWED_CHAT_ID), d1: Boolean(env.META_REVIEW_DB) });
+		if (request.method !== "GET") return new Response("Method not allowed", { status: 405 });
+		let d1Schema = false;
+		if (env.META_REVIEW_DB) {
+			try {
+				await env.META_REVIEW_DB.prepare("SELECT id, telegram_sent_at, telegram_claimed_at FROM meta_weekly_reviews LIMIT 1").first();
+				await env.META_REVIEW_DB.prepare("SELECT id FROM meta_contractor_actions LIMIT 1").first();
+				d1Schema = true;
+			} catch { /* Report readiness without exposing database errors. */ }
+		}
+		const meta = Boolean(env.META_ACCESS_TOKEN);
+		const shopify = Boolean(env.SHOPIFY_SHOP && env.SHOPIFY_CLIENT_ID && env.SHOPIFY_CLIENT_SECRET);
+		const ga4 = Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_REFRESH_TOKEN);
+		const telegram = Boolean(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_ALLOWED_CHAT_ID && env.TELEGRAM_WEBHOOK_SECRET);
+		return jsonResponse({ ok: meta && shopify && ga4 && d1Schema, meta, shopify, ga4, telegram, d1: Boolean(env.META_REVIEW_DB), d1Schema, dryRunReady: meta && shopify && ga4, scheduledEnabled: env.META_REVIEW_ENABLED === "true", telegramEnabled: env.META_REVIEW_TELEGRAM_ENABLED === "true", credentialChecks: "presence only; dry-run verifies API access" });
 	}
-	if (url.pathname === "/internal/meta-review/run" && request.method === "POST") {
-		const body: any = await request.json().catch(() => ({}));
-		const range = body.start_date && body.end_date ? { start: String(body.start_date), end: String(body.end_date) } : lastCompletedWeekRange();
-		if (!/^\d{4}-\d{2}-\d{2}$/.test(range.start) || !/^\d{4}-\d{2}-\d{2}$/.test(range.end) || range.start > range.end) return jsonResponse({ error: "Invalid date range" }, 400);
-		const review = await runReview(env, range.start, range.end, "on_demand", Boolean(body.send_telegram));
-		return jsonResponse(review);
+	if (["/internal/meta-review/run", "/internal/meta-review/dry-run"].includes(url.pathname) && request.method === "POST") {
+		const body: any = await request.json().catch(() => null);
+		if (!body || typeof body !== "object" || Array.isArray(body)) return jsonResponse({ error: "Invalid JSON object" }, 400);
+		if (body.send_telegram !== undefined && typeof body.send_telegram !== "boolean") return jsonResponse({ error: "send_telegram must be a boolean" }, 400);
+		const range = body.start_date === undefined && body.end_date === undefined ? lastCompletedWeekRange() : { start: body.start_date, end: body.end_date };
+		if (!validReviewRange(range.start, range.end)) return jsonResponse({ error: "Invalid date range (maximum 31 days)" }, 400);
+		const dryRun = url.pathname.endsWith("/dry-run");
+		if (dryRun && body.send_telegram === true) return jsonResponse({ error: "dry-run cannot send Telegram" }, 400);
+		if (!env.META_ACCESS_TOKEN) return jsonResponse({ error: "META_ACCESS_TOKEN is not configured" }, 503);
+		if (!dryRun && body.send_telegram === true && (env.META_REVIEW_TELEGRAM_ENABLED !== "true" || !env.META_REVIEW_DB || !env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_ALLOWED_CHAT_ID)) return jsonResponse({ error: "Telegram delivery is disabled or not configured" }, 503);
+		try {
+			const review = dryRun ? await buildMetaReview(env, range.start, range.end, "on_demand") : await runReview(env, range.start, range.end, "on_demand", body.send_telegram === true);
+			return jsonResponse(review);
+		} catch {
+			return jsonResponse({ error: "Review failed; verify upstream credentials, permissions and API availability" }, 502);
+		}
 	}
 	if (url.pathname === "/internal/meta-review/latest" && request.method === "GET") {
 		if (!env.META_REVIEW_DB) return jsonResponse({ error: "META_REVIEW_DB is not bound" }, 503);
@@ -715,10 +774,11 @@ export async function handleMetaReviewRequest(request: Request, env: Env): Promi
 }
 
 export async function handleMetaReviewScheduled(controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+	if (env.META_REVIEW_ENABLED !== "true") return;
 	const local = localDateInfo(new Date(controller.scheduledTime), "Europe/Warsaw");
 	if (local.weekday === "Sun" && local.hour === 20) {
 		const range = currentWeekRange(new Date(controller.scheduledTime));
-		await runReview(env, range.start, range.end, "preliminary", true);
+		await runReview(env, range.start, range.end, "preliminary", env.META_REVIEW_TELEGRAM_ENABLED === "true");
 		return;
 	}
 	if (local.weekday === "Mon" && local.hour === 8) {

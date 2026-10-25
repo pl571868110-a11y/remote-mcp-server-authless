@@ -34,6 +34,8 @@ declare global {
 		TELEGRAM_ALLOWED_CHAT_ID?: string;
 		TELEGRAM_WEBHOOK_SECRET?: string;
 		META_REVIEW_SEND_FINAL?: string;
+		META_REVIEW_ENABLED?: string;
+		META_REVIEW_TELEGRAM_ENABLED?: string;
 
 		// Configurable alert thresholds.
 		META_CPA_WARN_PCT?: string;

@@ -1,5 +1,9 @@
 # Meta Contractor Reviewer v1
 
+Operational instructions and the current audit status are in
+[the validation runbook](docs/META_REVIEWER_RUNBOOK.md). Cron and Telegram delivery
+are now disabled by default until explicitly enabled after validation.
+
 ## Goal
 
 Provide an automated, read-only weekly review of the Meta Ads contractor for PetsChoice Ukraine.
@@ -90,6 +94,7 @@ Routes:
 ```text
 GET  /internal/meta-review/health
 POST /internal/meta-review/run
+POST /internal/meta-review/dry-run
 GET  /internal/meta-review/latest
 GET  /internal/meta-review/history
 POST /telegram/webhook
@@ -159,11 +164,10 @@ Binding name expected by code:
 META_REVIEW_DB
 ```
 
-Until D1 is created and bound:
-- live/manual reviews can still be generated
-- Telegram can still send
-- history/latest endpoints return 503
-- full idempotency across retries is not guaranteed
+D1 is configured in Wrangler. Apply both migrations before enabling delivery.
+The dedicated dry-run route never accesses D1 or sends Telegram. Delivery requires
+D1 and an atomic reservation; ambiguous failures require operator reconciliation.
+Without D1, history/latest return 503 and delivery is disabled.
 
 ## Required secrets / variables
 
@@ -177,6 +181,8 @@ TELEGRAM_BOT_TOKEN
 TELEGRAM_ALLOWED_CHAT_ID
 TELEGRAM_WEBHOOK_SECRET
 META_REVIEW_SEND_FINAL             # optional; default false
+META_REVIEW_ENABLED                # scheduled work; default false
+META_REVIEW_TELEGRAM_ENABLED       # delivery; default false
 
 GA4_UA_PROPERTY_ID                 # optional; default 550699954
 
