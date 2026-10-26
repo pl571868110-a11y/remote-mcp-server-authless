@@ -12,6 +12,7 @@ const GOOGLE_SCOPES = [
 	"https://www.googleapis.com/auth/adwords",
 	"https://www.googleapis.com/auth/analytics.readonly",
 	"https://www.googleapis.com/auth/content",
+	"https://www.googleapis.com/auth/webmasters.readonly",
 ];
 
 type GoogleEnv = Env & {
@@ -167,7 +168,7 @@ async function ga4RunReport(body: Record<string, unknown>) {
 function createGoogleServer() {
 	const server = new McpServer({
 		name: "PetsChoice Google Connector",
-		version: "1.2.0",
+		version: "1.3.0",
 	});
 
 	server.registerTool(
@@ -368,6 +369,76 @@ function createGoogleServer() {
 			}
 		},
 	);
+
+
+	// Read-only Search Console tools restricted to linkio.one.
+	const linkioSite = "sc-domain:linkio.one";
+	const siteSchema = z.enum(["sc-domain:linkio.one", "https://linkio.one/"]);
+	async function gscRequest(path: string, body?: Record<string, unknown>) {
+		const token = await getAccessToken();
+		const res = await fetch("https://www.googleapis.com/webmasters/v3" + path, {
+			method: body ? "POST" : "GET",
+			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+			...(body ? { body: JSON.stringify(body) } : {}),
+		});
+		return readJsonResponse(res, "Search Console API");
+	}
+	async function safeGsc(operation: () => Promise<unknown>) {
+		try { return jsonText(await operation()); }
+		catch (error: any) { return jsonText({ error: error?.message || String(error) }, true); }
+	}
+	server.registerTool("search_console_access", {
+		description: "Check Google authorization and access to linkio.one only. Does not grant access.",
+		inputSchema: z.object({}),
+	}, async () => safeGsc(async () => {
+		const data = await gscRequest("/sites");
+		const sites = (data.siteEntry || []).filter((site: any) =>
+			site.siteUrl === linkioSite || site.siteUrl === "https://linkio.one/");
+		return { connected: sites.some((site: any) => site.permissionLevel !== "siteUnverifiedUser"),
+			sites, site: linkioSite };
+	}));
+	server.registerTool("search_console_performance", {
+		description: "Read Google Search clicks, impressions, CTR and position for linkio.one. Empty results do not prove non-indexation.",
+		inputSchema: z.object({
+			site: siteSchema.default(linkioSite),
+			start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+			end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+			dimensions: z.array(z.enum(["date", "query", "page", "country", "device"])).max(5).default(["query"]),
+			row_limit: z.number().int().min(1).max(25000).default(1000),
+			start_row: z.number().int().min(0).default(0),
+		}),
+	}, async ({ site, start_date, end_date, dimensions, row_limit, start_row }) =>
+		safeGsc(async () => {
+			if (start_date > end_date) throw new Error("start_date must not exceed end_date");
+			if (new Set(dimensions).size !== dimensions.length) throw new Error("Duplicate dimensions");
+			return { site, data: await gscRequest("/sites/" + encodeURIComponent(site) + "/searchAnalytics/query",
+				{ startDate: start_date, endDate: end_date, dimensions, rowLimit: row_limit,
+					startRow: start_row, dataState: "final", type: "web" }) };
+		}));
+	server.registerTool("search_console_sitemaps", {
+		description: "Read submitted sitemap status for linkio.one without submitting or changing anything.",
+		inputSchema: z.object({ site: siteSchema.default(linkioSite) }),
+	}, async ({ site }) => safeGsc(async () => ({
+		site, data: await gscRequest("/sites/" + encodeURIComponent(site) + "/sitemaps"),
+	})));
+	server.registerTool("search_console_inspect_url", {
+		description: "Read Google's indexed URL inspection result for an HTTPS URL on linkio.one. This is not a live test or indexing request.",
+		inputSchema: z.object({
+			site: siteSchema.default(linkioSite),
+			url: z.string().url().refine((value) => {
+				const url = new URL(value);
+				return url.origin === "https://linkio.one" && !url.username && !url.password;
+			}, "Only https://linkio.one URLs are allowed"),
+		}),
+	}, async ({ site, url }) => safeGsc(async () => {
+		const token = await getAccessToken();
+		const res = await fetch("https://searchconsole.googleapis.com/v1/urlInspection/index:inspect", {
+			method: "POST",
+			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+			body: JSON.stringify({ inspectionUrl: url, siteUrl: site, languageCode: "ru-RU" }),
+		});
+		return { site, url, data: await readJsonResponse(res, "URL Inspection API") };
+	}));
 
 	return server;
 }
