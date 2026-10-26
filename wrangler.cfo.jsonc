@@ -1,0 +1,30 @@
+/**
+ * Production PCC AI CFO Worker.
+ * Separate from legacy remote-mcp-server-authless.
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "pcc-ai-cfo-ua",
+	"main": "src/cfo-worker.ts",
+	"compatibility_date": "2026-07-02",
+	"compatibility_flags": ["nodejs_compat"],
+	"d1_databases": [
+		{
+			"binding": "PCC_CFO_DB",
+			"database_name": "pcc-ai-cfo-ua",
+			"database_id": "aeed7e9d-2afe-48c5-a484-a7fad389198a"
+		}
+	],
+	"services": [
+		{
+			"binding": "SHOPIFY_UA_SERVICE",
+			"service": "remote-mcp-server-authless"
+		}
+	],
+	"triggers": {
+                "crons": ["15 7 * * *"]
+        },
+        "observability": {
+		"enabled": true
+	}
+}
