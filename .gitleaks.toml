@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Pinned public Cloudflare Access application audience, not a credential"
+condition = "AND"
+regexTarget = "secret"
+paths = ['''(?:^|/)src/shopify-ua-access-auth\.mjs$''']
+regexes = ['''^9589f185ba7f92fdf5f5dabf3f5a6b679e41b1772d76c80cb022c3deeb098c82$''']
