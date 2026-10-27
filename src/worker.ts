@@ -1,3 +1,4 @@
+import { authorizeMcpRequest } from "./mcp-auth";
 import legacyWorker from "./index";
 import { handleGoogleRequest } from "./google";
 import { handleGoogleDiagnosticsRequest } from "./google-diagnostics";
@@ -10,6 +11,9 @@ export default {
 		env: Env,
 		ctx: ExecutionContext,
 	): Promise<Response> {
+		const authFailure = authorizeMcpRequest(request, env);
+		if (authFailure) return authFailure;
+
 		const googleResponse = await handleGoogleRequest(request, env, ctx);
 		if (googleResponse) return googleResponse;
 
