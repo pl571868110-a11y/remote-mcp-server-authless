@@ -2,6 +2,7 @@ export {};
 
 declare global {
 	interface Env {
+		PCC_SHOPIFY_UA_ACCESS_EMAILS?: string;
 		PCC_MCP_READ_TOKEN?: string;
 		PCC_MCP_WRITE_TOKEN?: string;
 		PCC_CFO_READ_TOKEN?: string;

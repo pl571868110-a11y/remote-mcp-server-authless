@@ -1,3 +1,4 @@
+import { authorizeShopifyUaAccessRequest } from "./shopify-ua-access-auth.mjs";
 import { authorizeMcpRequest } from "./mcp-auth";
 import legacyWorker from "./index";
 import { handleGoogleRequest } from "./google";
@@ -11,7 +12,7 @@ export default {
 		env: Env,
 		ctx: ExecutionContext,
 	): Promise<Response> {
-		const authFailure = authorizeMcpRequest(request, env);
+		const authFailure = await authorizeShopifyUaAccessRequest(request, env, authorizeMcpRequest);
 		if (authFailure) return authFailure;
 
 		const googleResponse = await handleGoogleRequest(request, env, ctx);
