@@ -170,3 +170,14 @@ dist
 
 .dev.vars
 .wrangler/
+
+# Local credentials, exports and recovery material
+.env.*
+.dev.vars*
+output/
+security-backup/
+.build/
+*.bak*
+*.dpapi
+*.zip
+*.tar.gz

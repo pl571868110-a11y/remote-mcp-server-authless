@@ -1,0 +1,53 @@
+name: Security CI
+on:
+  pull_request:
+  push:
+    branches: ['security/mcp-base-auth', 'security/cloudflare-access-jwt']
+permissions:
+  contents: read
+concurrency:
+  group: security-ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Clean dependency install
+        run: npm ci
+      - name: TypeScript
+        run: npm run type-check
+      - name: Tests
+        run: npm test
+      - name: Dry-run build (no deployment)
+        run: npm run build:check
+      - name: READ boundary in local workerd (outbound blocked)
+        run: npm run test:boundary
+      - name: Dependency audit
+        run: npm audit --audit-level=low
+      - name: Publication paths
+        run: node scripts/check-publish-files.mjs
+      - name: Secret scan (redacted, full current tree and PR commits)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@v8.24.3
+          scanner="$(go env GOPATH)/bin/gitleaks"
+          snapshot="$(mktemp -d)"
+          git archive HEAD | tar -x -C "$snapshot"
+          "$scanner" dir "$snapshot" --redact=100 --no-banner
+          if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            "$scanner" git . --redact=100 --no-banner --log-opts="${BASE_SHA}..HEAD"
+          else
+            echo 'No parent available; current tracked tree was scanned.'
+          fi
