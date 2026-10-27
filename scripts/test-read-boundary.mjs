@@ -37,6 +37,14 @@ const options = convertV4MiniflareOptions({
       outbound++;
       return new Response('Network disabled', {status: 503});
     },
+  }, {
+    name: 'boundary-probe', modules: true, compatibilityDate: '2026-07-02',
+    serviceBindings: {REMOTE: 'read-boundary'},
+    script: `export default { fetch(request, env) {
+      const forwarded = new Request(request);
+      forwarded.headers.set('Host', new URL(request.url).hostname);
+      return env.REMOTE.fetch(forwarded);
+    }};`,
   }],
 });
 options.telemetry = {enabled: false};
@@ -60,7 +68,10 @@ async function body(response) {
 }
 try {
   await mf.ready;
-  const worker = await mf.getWorker();
+  const worker = await mf.getWorker('boundary-probe');
+  const sum = await body(await worker.fetch(rpc('/mcp', 'test-legacy', 'tools/call', {name: 'add', arguments: {a: 2, b: 3}})));
+  assert.ok(!sum.error && !sum.result?.isError, 'a permitted non-network tool must still execute');
+  assert.ok(JSON.stringify(sum.result).includes('5'), 'add must return its real result');
   for (const [path, token, names] of routes) {
     const listed = await body(await worker.fetch(rpc(path, token, 'tools/list')));
     assert.deepEqual(listed.result.tools.map(t => t.name).sort(), [...names].sort(), path + ' exact read tool surface');
