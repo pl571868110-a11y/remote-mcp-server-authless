@@ -7,7 +7,7 @@ import { handleShopifyUaRequest } from "./shopify-ua";
 function authorizeShopifyUaWrite(request: Request, env: Env): Response | null {
 	if (new URL(request.url).pathname !== "/shopify-ua-write-mcp") return null;
 	const configured = (env as Env & { PCC_MCP_WRITE_TOKEN?: string }).PCC_MCP_WRITE_TOKEN;
-	if (!configured || typeof configured !== "string") {
+	if (!configured || typeof configured !== "string" || configured === (env as Env & { PCC_MCP_READ_TOKEN?: string }).PCC_MCP_READ_TOKEN) {
 		return new Response("Shopify UA write auth not configured", { status: 503, headers: { "Cache-Control": "no-store" } });
 	}
 	const header = request.headers.get("Authorization") || "";
