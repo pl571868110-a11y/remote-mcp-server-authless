@@ -1,0 +1,11 @@
+# Write MCP OAuth compatibility — deployment HOLD
+
+The candidate's write ingress only accepts PCC_MCP_WRITE_TOKEN, whereas the ChatGPT connection uses Cloudflare OAuth. This patch permits runtime-verified ctx.access only when its audience equals PCC_SHOPIFY_UA_WRITE_ACCESS_AUD and its identity email is in the separate PCC_SHOPIFY_UA_WRITE_ACCESS_EMAILS comma-separated list. Neither variable has a default. Do not reuse the UA READ audience or owner list. HTTP identity headers alone never authorize a request. CFO service bindings retain the existing write-token authentication. A READ token is always rejected on the write route.
+
+Validation: node --test test/shopify-ua-write-auth.test.ts (Node 24): 14/14 passed. These are unit tests with synthetic context; runtime, complete TypeScript/build, OAuth discovery and CFO dry_run remain UNVERIFIED. Generated Workers types may need refresh for ctx.access; verify on the runtime before release.
+
+Do not deploy this repository tree over production: production has manually deployed modules and bindings absent from this branch. Reconcile with exact version 211 source first and preserve all routes and bindings. The uploaded version 211 does not include this patch. Validate Access application and its exact write audience, owner policy, and real ctx.access in preview. Current known AUD 3985d44268f3a1a66b071b76e1db8d83172dddcace10da1d65ab855c8ff1c042 belongs to a preview_worker Access application; do not use it as a production write audience.
+
+Before release: synthetic runtime auth boundary tests, unauthenticated/read-token denial, authorized tools/list, and dry_run mutation-block tests. After release: authenticated CFO POST /internal/auto-paid with {"mode":"dry_run"}; confirm a new D1 cfo_auto_paid_runs record, start/finish, decisions, no errors, marked_paid=0 and unchanged Shopify states. Preserve rollback to version 207 (27dfd29f-0184-4b80-8f87-1b32279cd378). Do not trigger execute mode or change cron, credentials or read tools.
+
+References: https://developers.cloudflare.com/workers/configuration/cloudflare-access/#read-authenticated-user-identity-with-ctxaccess ; https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
