@@ -1,4 +1,4 @@
-import { cancelReturnedOrder } from './shopify-ua-cancel';
+import { cancelReturnedOrder } from './shopify-ua-cancel.ts';
 
 type D1 = { prepare(sql: string): { bind(...values: unknown[]): { first<T>(): Promise<T | null>; run(): Promise<{ meta?: { changes?: number } }> } } };
 type Candidate = { shopify_order: string; tracking_number: string; refusal_confirmed: number;
