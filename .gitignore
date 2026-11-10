@@ -170,3 +170,7 @@ dist
 
 .dev.vars
 .wrangler/
+
+# Exact deployed modules kept locally for transplant/regression checks
+production-baseline/
+production-candidate/

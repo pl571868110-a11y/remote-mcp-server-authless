@@ -1,6 +1,6 @@
 # Poland OAuth preparation — 2026-11-10
 
-Status: prepared for review, not deployed. No live consent, token replacement, Ads/Shopify writes or campaign launches performed.
+Status update: focused compiled-code transplant installed at 2026-11-10T16:50:35Z as version 1b327fb8-6f7f-4880-9922-55eba97cc480. Exact active baseline 1a4cf2d6 was retrieved through the version-specific modules API; three anchored replacements plus a new module, all three existing Meta modules byte-identical and all 33 bindings inherited with strict resolution. 40 synthetic checks passed. Live GSC siteOwner and GA4 passed. Ads/Merchant correctly await GOOGLE_PL_REFRESH_TOKEN. Owner browser Access login succeeded. Setup remains disabled until the operator sets GOOGLE_PL_OAUTH_SETUP_TOKEN; no token/secret replacement or Google Ads/Shopify write was performed. Navigation to Cloudflare settings could not complete because the browser tool transport disconnected. Existing initial release gate below documents the prior repo/main drift; no wholesale repo deployment occurred.
 
 ## Confirmed mapping
 
