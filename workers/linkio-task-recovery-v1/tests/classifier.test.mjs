@@ -1,0 +1,16 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { classify } from '../src/classifier.mjs';
+const a=(extra={})=>({taskId:'t-1',idempotencyKey:'k-1',state:'unknown',stages:[],receipts:[],...extra});
+test('upstream interrupted has no evidence',()=>assert.equal(classify(a({errorCode:'UPSTREAM_INTERRUPTED'})).classification,'NO_EXECUTION_EVIDENCE'));
+test('hermes unknown blocked from retry',()=>{const x=classify(a({stages:[{stage:'hermes_execution',state:'unknown'}]}));assert.equal(x.classification,'EXECUTION_UNCONFIRMED');assert.equal(x.replayPermitted,false)});
+test('hermes started must be reviewed',()=>assert.equal(classify(a({stages:[{stage:'hermes_execution',state:'started'}]})).nextAction,'VERIFY_EXTERNAL_RECEIPTS_AND_IDEMPOTENCY'));
+test('receipts not independently trusted',()=>{const x=classify(a({stages:[{stage:'hermes_execution',state:'unknown'}],receipts:[{kind:'backend_receipt',source:'hermes',ref:'r1'}]}));assert.equal(x.classification,'POTENTIAL_EXECUTION_RECEIPTS_UNVERIFIED');assert.equal(x.definitiveExecutionProof,false)});
+test('completion needs final quality review',()=>assert.equal(classify(a({state:'completed'})).nextAction,'COMPARE_FINAL_ARTIFACT_AND_QUALITY'));
+test('error with completed still review',()=>assert.equal(classify(a({state:'completed',errorCode:'QUALITY_FAILED'})).reviewRequired,true));
+test('never permits state mutation',()=>assert.equal(classify(a()).mayChangeState,false));
+test('reject missing idempotency',()=>assert.throws(()=>classify(a({idempotencyKey:null})),/INVALID_IDEMPOTENCY_KEY/));
+test('reject invalid stage',()=>assert.throws(()=>classify(a({stages:[{stage:'x',state:'nonsense'}]})),/INVALID_STAGES/));
+test('reject oversized receipts',()=>assert.throws(()=>classify(a({receipts:Array(31).fill({kind:'a',source:'b',ref:'c'})})),/INVALID_RECEIPTS/));
+test('no sensitive input returned',()=>{const x=classify(a({secret:'do-not-echo'}));assert.equal(JSON.stringify(x).includes('do-not-echo'),false)});
+test('530 failed is not replayable',()=>assert.equal(classify(a({state:'failed',errorCode:'TEST_STOPPED_UPSTREAM_530',stages:[{stage:'hermes_execution',state:'unknown'}]})).replayPermitted,false));
