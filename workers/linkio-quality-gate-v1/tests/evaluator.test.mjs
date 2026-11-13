@@ -1,0 +1,15 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {evaluate} from '../src/evaluator.mjs';
+const base=(text='ok',policy={maxChars:10})=>({taskId:'task-1',stage:'gpt_final',text,policy});
+test('pass simple',()=>assert.equal(evaluate(base()).status,'PASS'));
+test('fail above limit',()=>assert.deepEqual(evaluate(base('12345678901')).failed,['MAX_CHARS']));
+test('fail min',()=>assert.deepEqual(evaluate(base('x',{maxChars:10,minChars:2})).failed,['MIN_CHARS']));
+test('quote normalized',()=>assert.equal(evaluate(base('hello  world',{maxChars:50,requiredQuotes:['hello world']})).status,'PASS'));
+test('missing quote',()=>assert.equal(evaluate(base('none',{maxChars:50,requiredQuotes:['different']})).status,'FAIL'));
+test('unverifiable authenticity not PASS',()=>assert.equal(evaluate(base('text',{maxChars:50,sourceUrls:['https://example.com/x'],requireVerifiedSources:true})).status,'UNVERIFIED'));
+test('reject empty policy',()=>assert.throws(()=>evaluate(base('hi',{})),/INVALID_CHAR_LIMIT/));
+test('reject nontext',()=>assert.throws(()=>evaluate(base(null)),/INVALID_TEXT/));
+test('reject bad source URLs',()=>assert.throws(()=>evaluate(base('text',{maxChars:50,sourceUrls:['http://example.com/x']})),/INVALID_SOURCE_URLS/));
+test('correct unicode codepoints',()=>assert.equal(evaluate(base('🙂🙂',{maxChars:2})).checks[0].actual,2));
+test('reject oversized content',()=>assert.throws(()=>evaluate(base('x'.repeat(250001))),/INVALID_TEXT/));
