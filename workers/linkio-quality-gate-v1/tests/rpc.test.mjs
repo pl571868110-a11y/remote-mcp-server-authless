@@ -5,11 +5,11 @@ import { resolve } from "node:path";
 
 const quality = {
   name: "quality", modules: true, scriptPath: resolve("src/index.mjs"),
-  compatibilityDate: "2026-11-01", compatibilityFlags: ["rpc"]
+  compatibilityDate: "2026-08-01", compatibilityFlags: ["rpc"]
 };
 const probe = {
   name: "probe", modules: true,
-  compatibilityDate: "2026-11-01", compatibilityFlags: ["rpc"],
+  compatibilityDate: "2026-08-01", compatibilityFlags: ["rpc"],
   script: "export default { async fetch(request, env) { const payload = await request.json(); const result = await env.QUALITY.evaluate(payload); return Response.json(result); } };",
   serviceBindings: { QUALITY: { name: "quality", entrypoint: "QualityGate" } }
 };
