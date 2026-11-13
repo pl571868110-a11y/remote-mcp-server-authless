@@ -1,0 +1,20 @@
+name: LINKIO Quality Gate isolated checks
+on:
+  pull_request:
+    paths:
+      - 'workers/linkio-quality-gate-v1/**'
+      - '.github/workflows/linkio-quality-gate.yml'
+  workflow_dispatch:
+jobs:
+  deterministic-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run isolated unit tests
+        working-directory: workers/linkio-quality-gate-v1
+        run: node --test tests/*.test.mjs
