@@ -15,6 +15,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Run isolated unit tests
+      - name: Unit tests
         working-directory: workers/linkio-quality-gate-v1
-        run: node --test tests/*.test.mjs
+        run: node --test tests/evaluator.test.mjs
+      - name: Install isolated Workers runtime
+        working-directory: workers/linkio-quality-gate-v1
+        run: npm install --no-save --no-audit --no-fund miniflare@4
+      - name: Synthetic RPC through Service Binding
+        working-directory: workers/linkio-quality-gate-v1
+        run: node --test tests/rpc.test.mjs
