@@ -1,8 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
+import { handleVoiceOrderStatus, type VoiceOrderEnv } from "./voice-order-status";
 
-type ShopifyEnv = Env & {
+type ShopifyEnv = Env & VoiceOrderEnv & {
 	SHOPIFY_PL_SHOP?: string;
 	SHOPIFY_PL_CLIENT_ID?: string;
 	SHOPIFY_PL_CLIENT_SECRET?: string;
@@ -28,8 +29,8 @@ function normalizedShopDomain(raw: string): string {
 	return value;
 }
 
-async function getShopifyAccessToken(): Promise<string> {
-	if (currentEnv.SHOPIFY_PL_ADMIN_TOKEN) return currentEnv.SHOPIFY_PL_ADMIN_TOKEN;
+async function getShopifyAccessToken(forceClientCredentials = false): Promise<string> {
+	if (!forceClientCredentials && currentEnv.SHOPIFY_PL_ADMIN_TOKEN) return currentEnv.SHOPIFY_PL_ADMIN_TOKEN;
 	if (!currentEnv.SHOPIFY_PL_SHOP || !currentEnv.SHOPIFY_PL_CLIENT_ID || !currentEnv.SHOPIFY_PL_CLIENT_SECRET) {
 		throw new Error(
 			"SHOPIFY_PL_SHOP / SHOPIFY_PL_CLIENT_ID / SHOPIFY_PL_CLIENT_SECRET are not configured in Cloudflare Worker secrets",
@@ -74,7 +75,7 @@ async function shopifyGraphql(query: string, variables: Record<string, unknown> 
 	}
 	const shop = normalizedShopDomain(currentEnv.SHOPIFY_PL_SHOP);
 	const token = await getShopifyAccessToken();
-	const res = await fetch(`https://${shop}/admin/api/2026-07/graphql.json`, {
+	let res = await fetch(`https://${shop}/admin/api/2026-07/graphql.json`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
@@ -82,6 +83,14 @@ async function shopifyGraphql(query: string, variables: Record<string, unknown> 
 		},
 		body: JSON.stringify({ query, variables }),
 	});
+	if (res.status === 401 && currentEnv.SHOPIFY_PL_CLIENT_ID && currentEnv.SHOPIFY_PL_CLIENT_SECRET) {
+		const refreshedToken = await getShopifyAccessToken(true);
+		res = await fetch(`https://${shop}/admin/api/2026-07/graphql.json`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": refreshedToken },
+			body: JSON.stringify({ query, variables }),
+		});
+	}
 
 	const raw = await res.text();
 	let data: any;
@@ -208,6 +217,8 @@ export async function handleShopifyRequest(
 ): Promise<Response | null> {
 	currentEnv = env as ShopifyEnv;
 	const url = new URL(request.url);
+	const voiceResponse = await handleVoiceOrderStatus(request, currentEnv, shopifyGraphql);
+	if (voiceResponse) return voiceResponse;
 	if (url.pathname !== "/shopify-pl-mcp") return null;
 
 	const rewritten = new URL(request.url);
