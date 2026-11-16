@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'workers/linkio-shadow-reader-v1/**'
+      - 'workers/linkio-shadow-smoke-v1/**'
       - '.github/workflows/linkio-shadow-reader.yml'
   workflow_dispatch:
 jobs:
@@ -18,3 +19,5 @@ jobs:
       - name: Verify read-only evidence parsing
         working-directory: workers/linkio-shadow-reader-v1
         run: node --test tests/*.test.mjs
+      - name: Smoke Workflow syntax
+        run: node --check workers/linkio-shadow-smoke-v1/src/index.mjs
