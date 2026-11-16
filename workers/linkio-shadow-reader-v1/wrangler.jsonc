@@ -1,0 +1,24 @@
+{
+  "name": "linkio-shadow-reader-v1",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "AUDIT_DB",
+      "database_id": "598c92c6-0a2f-4729-805f-2a3052ed1627",
+      "database_name": "linkio-aicr"
+    }
+  ],
+  "services": [
+    {
+      "binding": "SHADOW",
+      "service": "linkio-shadow-audit-v1",
+      "entrypoint": "ShadowAudit"
+    }
+  ]
+}
