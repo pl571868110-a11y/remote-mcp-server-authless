@@ -3,6 +3,7 @@ import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 
 const GOOGLE_ADS_PL_CUSTOMER_ID = "1582377809";
+const GOOGLE_ADS_UA_CUSTOMER_ID = "8073944491";
 const GA4_PROPERTY_ID = "463531572";
 const MERCHANT_ACCOUNT_ID = "5772972099";
 const OAUTH_REDIRECT_URI =
@@ -140,7 +141,7 @@ async function readJsonResponse(res: Response, label: string): Promise<any> {
 
 function googleAdsAccount(market: "PL" | "UA") {
 	const rawCustomerId = market === "UA"
-		? currentEnv.GOOGLE_ADS_UA_CUSTOMER_ID
+		? currentEnv.GOOGLE_ADS_UA_CUSTOMER_ID || GOOGLE_ADS_UA_CUSTOMER_ID
 		: currentEnv.GOOGLE_ADS_PL_CUSTOMER_ID || GOOGLE_ADS_PL_CUSTOMER_ID;
 	if (!rawCustomerId || !/^\d{10}$/.test(rawCustomerId.replace(/-/g, ""))) {
 		throw new Error(`GOOGLE_ADS_${market}_CUSTOMER_ID is missing or invalid`);
