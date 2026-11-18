@@ -13,7 +13,7 @@ def call(args,**kw):
 def download(url):
     with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'PetsChoiceReportingUpdater/1.0'}),timeout=60) as r:return r.read(4*1024*1024)
 def notice(phase,version):
-    try:print(call(['python3',DATA+'/migration/verify.py','--phase',phase,'--release',version,'--context','deployment']))
+    try:print(call(['python3',DATA+'/migration/verify.py','--phase',phase,'--release',version,'--context','service']))
     except Exception:print(json.dumps({'notification':'UNCONFIRMED','phase':phase}))
 def main():
     ROOT.mkdir(mode=0o700,parents=True,exist_ok=True)
