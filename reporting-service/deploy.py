@@ -4,7 +4,7 @@ from run import command as container_command,stop as stop_container,config as co
 ROOT=pathlib.Path('/opt/petschoice-reporting')
 DATA='/opt/data/petschoice-reporting'
 REPO='https://raw.githubusercontent.com/pl571868110-a11y/remote-mcp-server-authless/'
-DOCKER=['docker','exec','--user','hermes','valera-hermes']
+DOCKER=['docker','exec','-i','--user','hermes','valera-hermes']
 def run(args,**kw):return subprocess.run(args,capture_output=True,text=True,timeout=480,**kw)
 def call(args,**kw):
     r=run(DOCKER+args,**kw)

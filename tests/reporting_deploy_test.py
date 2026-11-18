@@ -35,6 +35,11 @@ class RolloutTest(unittest.TestCase):
                 self.assertEqual(len(switches),2);self.assertIn('old-approved',switches[-1])
                 self.assertEqual(system.call_count,2)
             self.assertEqual(notices[-1][0],'alert')
+    def test_container_staging_keeps_stdin_open(self):
+        with patch.object(d,'run') as process:
+            process.return_value.returncode=0;process.return_value.stdout='staged'
+            self.assertEqual(d.call(['python3','-c','stage'],input='{}'),'staged')
+            self.assertIn('-i',process.call_args.args[0]);self.assertEqual(process.call_args.kwargs['input'],'{}')
     def test_bad_source_does_not_activate(self):self.exercise('pre')
     def test_bad_delivery_rolls_back(self):self.exercise('post')
 if __name__=='__main__':unittest.main()

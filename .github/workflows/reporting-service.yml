@@ -1,10 +1,10 @@
 name: Reporting service release checks
 on:
   pull_request:
-    paths: ['reporting-service/**', 'scripts/check-reporting-bundle.py', 'tests/reporting_deploy_test.py', '.github/workflows/reporting-service.yml']
+    paths: ['reporting-service/**', 'scripts/check-reporting-bundle.py', 'scripts/build-reporting-bundle.py', 'tests/reporting_*_test.py', '.github/workflows/reporting-service.yml']
   push:
     branches: [main]
-    paths: ['reporting-service/**', 'scripts/check-reporting-bundle.py', 'tests/reporting_deploy_test.py', '.github/workflows/reporting-service.yml']
+    paths: ['reporting-service/**', 'scripts/check-reporting-bundle.py', 'scripts/build-reporting-bundle.py', 'tests/reporting_*_test.py', '.github/workflows/reporting-service.yml']
 permissions:
   contents: read
 jobs:
@@ -17,5 +17,5 @@ jobs:
           node-version: '26'
       - run: node --test reporting-service/isolation.test.mjs
       - run: python3 scripts/check-reporting-bundle.py
-      - run: python3 -m unittest discover -s tests -p reporting_deploy_test.py
+      - run: python3 -m unittest discover -s tests -p 'reporting_*_test.py'
 
