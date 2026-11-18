@@ -26,6 +26,20 @@ def send_notice(phase,release,context='service'):
         if not(r.get('success') is True or r.get('status')=='SKIPPED_SENT'):raise RuntimeError('DELIVERY_UNCONFIRMED')
     if phase=='recovered':state['open']=False;statefile.write_text(json.dumps(state))
     return receipts
+def close_incidents():
+    # A confirmed release canary is the recovery notification for both legacy contexts.
+    for context in ('service','deployment'):
+        path=ROOT/('notice-'+context+'.json')
+        if path.exists():
+            state=json.loads(path.read_text())
+            if state.get('open'):
+                state['open']=False;path.write_text(json.dumps(state));path.chmod(0o600)
+def finish_check(phase,release):
+    if phase=='post':
+        receipts=send_notice('post',release)
+        close_incidents()
+        return receipts
+    return send_notice('recovered',release) if phase=='monitor' else []
 def check(port,host):
     config=runpy.run_path(str(pathlib.Path(__file__).with_name('client.py')))['config']
     headers,bot=config()
@@ -47,8 +61,7 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--phase',choices=['pre','post','monitor','alert','recovered'],required=True);p.add_argument('--port',type=int,default=8766);p.add_argument('--host',choices=['petschoice-reporting','petschoice-reporting-candidate'],default='petschoice-reporting');p.add_argument('--release',default='monitor');p.add_argument('--context',default='service');a=p.parse_args()
     if a.port not in (8766,8767):raise RuntimeError('PORT')
     if a.phase in ('alert','recovered'):print(json.dumps({'ok':True,'notices':send_notice(a.phase,a.release,a.context)}));return
-    d=check(a.port,a.host);notices=send_notice('post',a.release) if a.phase=='post' else []
-    if a.phase in ('post','monitor'):notices+=send_notice('recovered',a.release)
+    d=check(a.port,a.host);notices=finish_check(a.phase,a.release)
     print(json.dumps({'ok':True,'phase':a.phase,'checked_at':d['checked_at'],'sources':d['sources'],'notices':notices}))
 if __name__=='__main__':
     try:main()
