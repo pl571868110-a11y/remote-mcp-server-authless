@@ -1,4 +1,4 @@
-import argparse,datetime as dt,json,pathlib,runpy,uuid,urllib.request
+import argparse,datetime as dt,json,pathlib,runpy,uuid,urllib.request,urllib.error,time
 ROOT=pathlib.Path('/opt/data/petschoice-reporting')
 def modules():
     return [(name,runpy.run_path('/opt/data/'+name+'-reports/runner.py')) for name in ('google-ua','meta')]
@@ -30,7 +30,14 @@ def check(port,host):
     config=runpy.run_path(str(pathlib.Path(__file__).with_name('client.py')))['config']
     headers,bot=config()
     req=urllib.request.Request('http://'+host+':'+str(port)+'/health',headers=headers)
-    with urllib.request.urlopen(req,timeout=240) as response:data=json.load(response)
+    for attempt in range(30):
+        try:
+            with urllib.request.urlopen(req,timeout=240) as response:data=json.load(response)
+            break
+        except urllib.error.HTTPError:raise
+        except urllib.error.URLError:
+            if attempt==29:raise
+            time.sleep(1)
     if data.get('ok') is not True:raise RuntimeError('SOURCE_CHECK_FAILED')
     for name,m in modules():
         result=m['request']('https://api.telegram.org/bot'+bot+'/getChat?chat_id='+m['TARGET'],{})
