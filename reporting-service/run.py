@@ -7,7 +7,6 @@ def config():
     if not re.fullmatch(r'node@sha256:[a-f0-9]{64}',image):raise RuntimeError('UNPINNED_RUNTIME')
     info=json.loads(subprocess.check_output(['docker','inspect','valera-hermes','--format','{{json .Mounts}}']))
     mount=next(x['Source'] for x in info if x['Destination']=='/opt/data')+'/petschoice-reporting'
-    subprocess.run(['docker','network','inspect',NETWORK],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode or None
     if subprocess.run(['docker','network','inspect',NETWORK],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode:
         subprocess.run(['docker','network','create',NETWORK],check=True,stdout=subprocess.DEVNULL)
     subprocess.run(['docker','network','connect',NETWORK,'valera-hermes'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
