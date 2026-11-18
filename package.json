@@ -3,13 +3,15 @@
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
-		"deploy": "wrangler deploy",
+		"deploy": "node scripts/finance-release.mjs --publish --worker=remote-mcp-server-authless",
 		"dev": "wrangler dev",
 		"format": "oxfmt --write .",
 		"lint:fix": "oxlint --fix",
 		"start": "wrangler dev",
 		"cf-typegen": "wrangler types",
-		"type-check": "tsc --noEmit"
+		"type-check": "tsc --noEmit",
+		"predeploy": "node scripts/finance-release.mjs --check --worker=remote-mcp-server-authless",
+		"deploy:preview": "node scripts/finance-release.mjs --preview --worker=remote-mcp-server-authless"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "1.30.0",
