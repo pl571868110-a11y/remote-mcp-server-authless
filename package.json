@@ -11,7 +11,8 @@
 		"cf-typegen": "wrangler types",
 		"type-check": "tsc --noEmit",
 		"predeploy": "node scripts/finance-release.mjs --check --worker=remote-mcp-server-authless",
-		"deploy:preview": "node scripts/finance-release.mjs --preview --worker=remote-mcp-server-authless"
+		"deploy:preview": "node scripts/finance-release.mjs --preview --worker=remote-mcp-server-authless",
+		"postinstall": "node scripts/materialize-finance-release.mjs"
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "1.30.0",
