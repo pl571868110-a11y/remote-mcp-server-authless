@@ -2,7 +2,7 @@ import hashlib,json,pathlib
 root=pathlib.Path(__file__).resolve().parents[1]
 bundle=json.loads((root/'reporting-service/bundle.json').read_text())
 files=bundle['files']
-assert len(files)==11
+assert len(files)==12
 assert hashlib.sha256(json.dumps(files,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()==bundle['release_id']
 for name,value in files.items():
     assert pathlib.Path(name).name==name
