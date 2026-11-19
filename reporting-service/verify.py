@@ -1,5 +1,7 @@
 import argparse,datetime as dt,json,pathlib,runpy,uuid,urllib.request,urllib.error,time
 ROOT=pathlib.Path('/opt/data/petschoice-reporting')
+CHECK_STAGE='configuration'
+CHECK_PHASE='unknown'
 def modules():
     return [(name,runpy.run_path('/opt/data/'+name+'-reports/runner.py')) for name in ('google-ua','meta')]
 def send_notice(phase,release,context='service'):
@@ -17,9 +19,9 @@ def send_notice(phase,release,context='service'):
     for name,m in modules():
         _,bot=m['config']()
         if name=='google-ua':
-            text={'post':'Технічна перевірка: окремий сервіс звітності оновлено. Дані Google та Meta доступні. Доставку підтверджено. Розклад: 14:00 Europe/Warsaw.','alert':'Перевірка сервісу звітності не пройшла. Невдале оновлення не повинно замінювати робочу версію; старі цифри не підставляються.','recovered':'Сервіс звітності відновлено. Перевірку джерел пройдено.'}[phase]
+            text={'post':'Технічна перевірка: окремий сервіс звітності оновлено. Дані Google та Meta доступні. Доставку підтверджено. Розклад: 14:00 Europe/Warsaw.','alert':'Контрольна перевірка сервісу звітності не пройшла. Це не підтверджує відмову обох джерел. Причину записано в журналі; старі цифри не підставляються.','recovered':'Сервіс звітності відновлено. Перевірку джерел пройдено.'}[phase]
         else:
-            text={'post':'Техническая проверка: отдельный сервис отчётности обновлён. Данные Google и Meta доступны. Доставка подтверждена. Расписание: 14:00 Europe/Warsaw.','alert':'Проверка сервиса отчётности не прошла. Неудачное обновление не должно заменять рабочую версию; старые цифры не подставляются.','recovered':'Сервис отчётности восстановлен. Проверка источников пройдена.'}[phase]
+            text={'post':'Техническая проверка: отдельный сервис отчётности обновлён. Данные Google и Meta доступны. Доставка подтверждена. Расписание: 14:00 Europe/Warsaw.','alert':'Контрольная проверка сервиса отчётности не прошла. Это не подтверждает отказ обоих источников. Причина записана в журнале; старые цифры не подставляются.','recovered':'Сервис отчётности восстановлен. Проверка источников пройдена.'}[phase]
         db=(m.get('open_db') or m.get('dbopen'))()
         r=m['send'](db,key,text,bot,{'technical_check':True,'phase':phase,'release':release})
         receipts.append({'source':name,**r})
@@ -41,8 +43,11 @@ def finish_check(phase,release):
         return receipts
     return send_notice('recovered',release) if phase=='monitor' else []
 def check(port,host):
+    global CHECK_STAGE
+    CHECK_STAGE='configuration'
     config=runpy.run_path(str(pathlib.Path(__file__).with_name('client.py')))['config']
     headers,bot=config()
+    CHECK_STAGE='source_health'
     req=urllib.request.Request('http://'+host+':'+str(port)+'/health',headers=headers)
     for attempt in range(30):
         try:
@@ -54,16 +59,34 @@ def check(port,host):
             time.sleep(1)
     if data.get('ok') is not True:raise RuntimeError('SOURCE_CHECK_FAILED')
     for name,m in modules():
+        CHECK_STAGE='telegram_'+name
         result=m['request']('https://api.telegram.org/bot'+bot+'/getChat?chat_id='+m['TARGET'],{})
         if result.get('ok') is not True or str(result.get('result',{}).get('id'))!=m['TARGET']:raise RuntimeError('DESTINATION_MISMATCH')
     return data
+def failure_summary(error):
+    # Never emit exception messages or request URLs: they can contain bot credentials.
+    if isinstance(error,urllib.error.HTTPError):code='HTTP_'+str(error.code)
+    elif isinstance(error,urllib.error.URLError):code='NETWORK_ERROR'
+    elif isinstance(error,TimeoutError):code='TIMEOUT'
+    else:code=type(error).__name__
+    return {'ok':False,'phase':CHECK_PHASE,'stage':CHECK_STAGE,'error':code}
+def monitor_check(port,host):
+    # Confirm a transient secondary failure before opening an incident.
+    for attempt in range(3):
+        try:return check(port,host)
+        except Exception as error:
+            print(json.dumps({**failure_summary(error),'attempt':attempt+1,'will_retry':attempt<2}),flush=True)
+            if attempt==2:raise
+            time.sleep(3)
 def main():
+    global CHECK_PHASE
     p=argparse.ArgumentParser();p.add_argument('--phase',choices=['pre','post','monitor','alert','recovered'],required=True);p.add_argument('--port',type=int,default=8766);p.add_argument('--host',choices=['petschoice-reporting','petschoice-reporting-candidate'],default='petschoice-reporting');p.add_argument('--release',default='monitor');p.add_argument('--context',default='service');a=p.parse_args()
+    CHECK_PHASE=a.phase
     if a.port not in (8766,8767):raise RuntimeError('PORT')
     if a.phase in ('alert','recovered'):print(json.dumps({'ok':True,'notices':send_notice(a.phase,a.release,a.context)}));return
-    d=check(a.port,a.host);notices=finish_check(a.phase,a.release)
+    d=(monitor_check if a.phase=='monitor' else check)(a.port,a.host);notices=finish_check(a.phase,a.release)
     print(json.dumps({'ok':True,'phase':a.phase,'checked_at':d['checked_at'],'sources':d['sources'],'notices':notices}))
 if __name__=='__main__':
     try:main()
-    except Exception:print(json.dumps({'ok':False,'error':'REPORTING_CHECK_FAILED'}));raise SystemExit(1)
+    except Exception as error:print(json.dumps(failure_summary(error)));raise SystemExit(1)
 
