@@ -4,6 +4,11 @@ import { z } from "zod";
 
 let currentEnv: Env;
 
+function requiredToken(token: string | undefined, name: string): string {
+	if (!token) throw new Error(`${name} is not configured`);
+	return token;
+}
+
 function createServer() {
 	const server = new McpServer({
 		name: "PetsChoice MCP Server",
@@ -217,7 +222,7 @@ function createServer() {
 				"https://api.monobank.ua/personal/client-info",
 				{
 					headers: {
-						"X-Token": currentEnv.MONOBANK_TOKEN,
+						"X-Token": requiredToken(currentEnv.MONOBANK_TOKEN, "MONOBANK_TOKEN"),
 					},
 				},
 			);
@@ -278,7 +283,7 @@ function createServer() {
 				`https://api.monobank.ua/personal/statement/${account}/${fromTs}/${toTs}`,
 				{
 					headers: {
-						"X-Token": currentEnv.MONOBANK_TOKEN,
+						"X-Token": requiredToken(currentEnv.MONOBANK_TOKEN, "MONOBANK_TOKEN"),
 					},
 				},
 			);
@@ -501,7 +506,7 @@ function createServer() {
 				`https://acp.privatbank.ua/api/statements/balance?${params.toString()}`,
 				{
 					headers: {
-						token: currentEnv.PRIVATBANK_TOKEN,
+						token: requiredToken(currentEnv.PRIVATBANK_TOKEN, "PRIVATBANK_TOKEN"),
 						"User-Agent": "PetsChoiceMCP/1.0",
 						"Content-Type":
 							"application/json;charset=utf8",
@@ -594,7 +599,7 @@ function createServer() {
 				`https://acp.privatbank.ua/api/statements/transactions?${params.toString()}`,
 				{
 					headers: {
-						token: currentEnv.PRIVATBANK_TOKEN,
+						token: requiredToken(currentEnv.PRIVATBANK_TOKEN, "PRIVATBANK_TOKEN"),
 						"User-Agent": "PetsChoiceMCP/1.0",
 						"Content-Type":
 							"application/json;charset=utf8",

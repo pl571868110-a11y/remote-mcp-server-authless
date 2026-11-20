@@ -2,7 +2,8 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 
-const GOOGLE_ADS_CUSTOMER_ID = "3206813262";
+const GOOGLE_ADS_PL_CUSTOMER_ID = "1582377809";
+const GOOGLE_ADS_UA_CUSTOMER_ID = "8073944491";
 const GA4_PROPERTY_ID = "463531572";
 const MERCHANT_ACCOUNT_ID = "5772972099";
 const OAUTH_REDIRECT_URI =
@@ -20,6 +21,12 @@ type GoogleEnv = Env & {
 	GOOGLE_CLIENT_SECRET?: string;
 	GOOGLE_REFRESH_TOKEN?: string;
 	GOOGLE_ADS_LOGIN_CUSTOMER_ID?: string;
+	GOOGLE_ADS_PL_CUSTOMER_ID?: string;
+	GOOGLE_ADS_UA_CUSTOMER_ID?: string;
+	GOOGLE_ADS_UA_LOGIN_CUSTOMER_ID?: string;
+	GOOGLE_UA_CLIENT_ID?: string;
+	GOOGLE_UA_CLIENT_SECRET?: string;
+	GOOGLE_UA_REFRESH_TOKEN?: string;
 };
 
 let currentEnv: GoogleEnv;
@@ -89,18 +96,21 @@ async function verifyState(state: string, secret: string): Promise<boolean> {
 	}
 }
 
-async function getAccessToken(): Promise<string> {
-	if (!currentEnv.GOOGLE_CLIENT_ID || !currentEnv.GOOGLE_CLIENT_SECRET) {
-		throw new Error("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not configured");
+async function getAccessToken(market: "PL" | "UA" = "PL"): Promise<string> {
+	const clientId = market === "UA" ? currentEnv.GOOGLE_UA_CLIENT_ID : currentEnv.GOOGLE_CLIENT_ID;
+	const clientSecret = market === "UA" ? currentEnv.GOOGLE_UA_CLIENT_SECRET : currentEnv.GOOGLE_CLIENT_SECRET;
+	const refreshToken = market === "UA" ? currentEnv.GOOGLE_UA_REFRESH_TOKEN : currentEnv.GOOGLE_REFRESH_TOKEN;
+	if (!clientId || !clientSecret) {
+		throw new Error(`Google ${market} OAuth client is not configured`);
 	}
-	if (!currentEnv.GOOGLE_REFRESH_TOKEN) {
-		throw new Error("GOOGLE_REFRESH_TOKEN is not configured. Complete /oauth/google/start first.");
+	if (!refreshToken) {
+		throw new Error(`Google ${market} refresh token is not configured`);
 	}
 
 	const body = new URLSearchParams({
-		client_id: currentEnv.GOOGLE_CLIENT_ID,
-		client_secret: currentEnv.GOOGLE_CLIENT_SECRET,
-		refresh_token: currentEnv.GOOGLE_REFRESH_TOKEN,
+		client_id: clientId,
+		client_secret: clientSecret,
+		refresh_token: refreshToken,
 		grant_type: "refresh_token",
 	});
 	const res = await fetch("https://oauth2.googleapis.com/token", {
@@ -129,22 +139,34 @@ async function readJsonResponse(res: Response, label: string): Promise<any> {
 	return data;
 }
 
-async function googleAdsSearch(query: string) {
-	const token = await getAccessToken();
+function googleAdsAccount(market: "PL" | "UA") {
+	const rawCustomerId = market === "UA"
+		? currentEnv.GOOGLE_ADS_UA_CUSTOMER_ID || GOOGLE_ADS_UA_CUSTOMER_ID
+		: currentEnv.GOOGLE_ADS_PL_CUSTOMER_ID || GOOGLE_ADS_PL_CUSTOMER_ID;
+	if (!rawCustomerId || !/^\d{10}$/.test(rawCustomerId.replace(/-/g, ""))) {
+		throw new Error(`GOOGLE_ADS_${market}_CUSTOMER_ID is missing or invalid`);
+	}
+	return {
+		customerId: rawCustomerId.replace(/-/g, ""),
+		loginCustomerId: market === "UA"
+			? currentEnv.GOOGLE_ADS_UA_LOGIN_CUSTOMER_ID
+			: currentEnv.GOOGLE_ADS_LOGIN_CUSTOMER_ID,
+	};
+}
+
+async function googleAdsSearch(query: string, market: "PL" | "UA" = "PL") {
+	const { customerId, loginCustomerId } = googleAdsAccount(market);
+	const token = await getAccessToken(market);
 	const headers: Record<string, string> = {
 		Authorization: `Bearer ${token}`,
 		"Content-Type": "application/json",
 	};
-	if (currentEnv.GOOGLE_ADS_LOGIN_CUSTOMER_ID) {
-		headers["login-customer-id"] = currentEnv.GOOGLE_ADS_LOGIN_CUSTOMER_ID.replace(/-/g, "");
+	if (loginCustomerId) {
+		headers["login-customer-id"] = loginCustomerId.replace(/-/g, "");
 	}
 	const res = await fetch(
-		`https://googleads.googleapis.com/v25/customers/${GOOGLE_ADS_CUSTOMER_ID}/googleAds:search`,
-		{
-			method: "POST",
-			headers,
-			body: JSON.stringify({ query }),
-		},
+		`https://googleads.googleapis.com/v25/customers/${customerId}/googleAds:search`,
+		{ method: "POST", headers, body: JSON.stringify({ query }) },
 	);
 	return readJsonResponse(res, "Google Ads API");
 }
@@ -189,7 +211,7 @@ function createGoogleServer() {
 					FROM campaign
 					ORDER BY campaign.name
 				`);
-				return jsonText({ customer_id: GOOGLE_ADS_CUSTOMER_ID, ...data });
+				return jsonText({ customer_id: googleAdsAccount("PL").customerId, ...data });
 			} catch (error: any) {
 				return jsonText({ error: error?.message || String(error) }, true);
 			}
@@ -221,12 +243,36 @@ function createGoogleServer() {
 					WHERE segments.date BETWEEN '${start_date}' AND '${end_date}'
 					ORDER BY metrics.cost_micros DESC
 				`);
-				return jsonText({ customer_id: GOOGLE_ADS_CUSTOMER_ID, start_date, end_date, ...data });
+				return jsonText({ customer_id: googleAdsAccount("PL").customerId, start_date, end_date, ...data });
 			} catch (error: any) {
 				return jsonText({ error: error?.message || String(error) }, true);
 			}
 		},
 	);
+
+	server.registerTool("google_ads_ua_campaigns", {
+		description: "Read campaigns and budgets from the separately authorized PetsChoice Ukraine Google Ads account.",
+		inputSchema: z.object({}),
+	}, async () => {
+		try {
+			const data = await googleAdsSearch(`SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type, campaign_budget.amount_micros FROM campaign ORDER BY campaign.name`, "UA");
+			return jsonText({ customer_id: googleAdsAccount("UA").customerId, market: "UA", ...data });
+		} catch (error: any) { return jsonText({ error: error?.message || String(error) }, true); }
+	});
+
+	server.registerTool("google_ads_ua_summary", {
+		description: "Read spend and conversions from the separately authorized PetsChoice Ukraine Google Ads account.",
+		inputSchema: z.object({
+			start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+			end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+		}),
+	}, async ({ start_date, end_date }) => {
+		try {
+			if (start_date > end_date) throw new Error("start_date must not exceed end_date");
+			const data = await googleAdsSearch(`SELECT campaign.id, campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions, metrics.conversions_value FROM campaign WHERE segments.date BETWEEN '${start_date}' AND '${end_date}' ORDER BY metrics.cost_micros DESC`, "UA");
+			return jsonText({ customer_id: googleAdsAccount("UA").customerId, market: "UA", start_date, end_date, ...data });
+		} catch (error: any) { return jsonText({ error: error?.message || String(error) }, true); }
+	});
 
 	server.registerTool(
 		"ga4_purchase_report",
