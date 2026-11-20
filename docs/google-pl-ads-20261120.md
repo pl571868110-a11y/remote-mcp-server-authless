@@ -1,0 +1,11 @@
+# Poland Ads isolated credential repair — 2026-11-20
+
+Observed production version: `b66ec207-1454-410e-adb7-c703a68fb03a` (309), with all 13 module hashes matching the existing approved release artifact. The live Ads customer default is already 1582377809. The live Ads handler nevertheless uses GOOGLE_REFRESH_TOKEN, while GOOGLE_PL_REFRESH_TOKEN exists as a separate secret binding. A campaign read returned USER_PERMISSION_DENIED (403); this does not prove which user or manager relationship caused the denial.
+
+The deterministic patch changes only the Poland Ads credential selection and rejects a customer override other than 1582377809 before network access. Missing/failed Poland credentials fail closed, with no fallback to the shared grant, no raw OAuth error disclosure, and no retry. GA4, Merchant, GSC, UA, finance, Shopify, route authentication and all other compiled modules retain their existing bytes/behavior. No credentials are copied or replaced. No ad writes are added.
+
+Materialization still starts from the complete approved artifact, checks the original worker SHA256, applies one exact anchored replacement, and verifies the resulting module through the release gate. All other module hashes are unchanged. The gate now requires the independently observed live version 309, so a concurrent release stops publication. The existing compiled source map is preserved; stack mappings below the inserted helper may be shifted.
+
+Validation: 15 Node tests passed (seven new tests plus eight existing release/isolation tests). Production API access remains unconfirmed until the patched version returns the exact customer identity (1582377809 / PLN / Europe/Warsaw) and a campaign read for 24463735841. Google Ads API 403 must remain a blocked source, never zero metrics. Do not infer paid orders, revenue, CPA or ROAS from this integration test.
+
+Release through `node scripts/materialize-finance-release.mjs`, `npm run deploy:preview`, then the guarded publisher. Preserve all live bindings and secret values. Do not deploy src/index.ts directly: the complete artifact includes additional production modules. If the baseline changes, re-read production and reconcile; do not relax checks or overwrite it.
