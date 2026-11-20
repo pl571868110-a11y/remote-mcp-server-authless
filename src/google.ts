@@ -1,3 +1,4 @@
+import { handlePolandOAuth, refreshPolandAccessToken, type PlEnv } from "./google-pl-oauth";
 import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
@@ -15,7 +16,7 @@ const GOOGLE_SCOPES = [
 	"https://www.googleapis.com/auth/webmasters.readonly",
 ];
 
-type GoogleEnv = Env & {
+type GoogleEnv = Env & PlEnv & {
 	GOOGLE_CLIENT_ID?: string;
 	GOOGLE_CLIENT_SECRET?: string;
 	GOOGLE_REFRESH_TOKEN?: string;
@@ -130,7 +131,7 @@ async function readJsonResponse(res: Response, label: string): Promise<any> {
 }
 
 async function googleAdsSearch(query: string) {
-	const token = await getAccessToken();
+	const token = await refreshPolandAccessToken(currentEnv);
 	const headers: Record<string, string> = {
 		Authorization: `Bearer ${token}`,
 		"Content-Type": "application/json",
@@ -357,7 +358,7 @@ function createGoogleServer() {
 		},
 		async ({ page_size }) => {
 			try {
-				const token = await getAccessToken();
+				const token = await refreshPolandAccessToken(currentEnv);
 				const res = await fetch(
 					`https://merchantapi.googleapis.com/products/v1/accounts/${MERCHANT_ACCOUNT_ID}/products?pageSize=${page_size}`,
 					{ headers: { Authorization: `Bearer ${token}` } },
@@ -450,6 +451,8 @@ export async function handleGoogleRequest(
 	env: Env,
 	ctx: ExecutionContext,
 ): Promise<Response | null> {
+	const polandOAuth = await handlePolandOAuth(request, env as GoogleEnv);
+	if (polandOAuth) return polandOAuth;
 	currentEnv = env as GoogleEnv;
 	const url = new URL(request.url);
 

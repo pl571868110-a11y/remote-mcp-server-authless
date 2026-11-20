@@ -1,0 +1,22 @@
+{
+  "active_version": "1a4cf2d6-a33a-4ef2-90b4-7958051033a5",
+  "only_patches": 3,
+  "baseline_sha256": "329f1eecff69594b0c08f7d7d92312e491996cdfc34fdea665f0d63ff25a0441",
+  "candidate_sha256": "10f3da4be3fb25221ddd81a0667143d1bbdaf3380478f6d1fd23adbb0057375b",
+  "unchanged_modules": {
+    "meta-server-route.mjs": "d21f87dc546b50bede7bb29e47ae85d0cdde35f3d6357e2cd2070b7f7b47b32a",
+    "meta-access.mjs": "86478ff9a61eecd4fbc026d90a14fb42bc1d7352b84d7c4a8e707b27314a00b2",
+    "meta-report.mjs": "c698e61b7abac7fdf786ae79105de9ad6306624e8f7386700355c1ada0b38b63"
+  },
+  "installed_version": "1b327fb8-6f7f-4880-9922-55eba97cc480",
+  "deployment_id": "998f855d-f932-47bb-8085-1891cac2f9b1",
+  "installed_utc": "2026-11-10T16:50:35.625741Z",
+  "bindings_preserved": 33,
+  "tests_passed": 40,
+  "live_gsc": "PASS siteOwner",
+  "live_ga4": "PASS",
+  "live_ads": "GOOGLE_PL_CREDENTIALS_NOT_CONFIGURED",
+  "live_merchant": "GOOGLE_PL_CREDENTIALS_NOT_CONFIGURED",
+  "browser_access": "owner login successful; setup disabled; settings navigation transport disconnected",
+  "secret_changes": false
+}
