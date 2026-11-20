@@ -59,7 +59,11 @@ export async function handlePolandOAuth(request: Request, env: PlEnv): Promise<R
 		return response("PL_OAUTH_SETUP_DISABLED", 503);
 	}
 	if (start) {
-		if (request.method === "GET") return response(`<h1>Connect Poland Google Ads</h1><p>Account: ${PL_EMAIL}</p><form method="post" action="${PL_START}"><label>Temporary setup code <input name="setup_code" type="password" autocomplete="off" required maxlength="256"></label><button>Continue to Google</button></form>`);
+		if (request.method === "GET") { const page = response(`<h1>Connect Poland Google Ads</h1><p>Account: ${PL_EMAIL}</p><form method="post" action="${PL_START}"><label>Temporary setup code <input name="setup_code" type="password" autocomplete="off" required maxlength="256"></label><button>Continue to Google</button></form>`);
+			page.headers.set("Referrer-Policy", "same-origin");
+			page.headers.set("Content-Security-Policy", "default-src 'none'; form-action 'self' https://accounts.google.com; frame-ancestors 'none'; base-uri 'none'");
+			return page;
+		}
 		if (request.method !== "POST") return response("METHOD_NOT_ALLOWED", 405);
 		if (request.headers.get("Origin") !== url.origin) return response("PL_OAUTH_ORIGIN_REJECTED", 403);
 		if (Number(request.headers.get("Content-Length") ?? 0) > 1024) return response("PL_OAUTH_BODY_TOO_LARGE", 413);
