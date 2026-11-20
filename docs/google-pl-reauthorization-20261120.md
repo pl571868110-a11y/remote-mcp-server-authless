@@ -1,0 +1,9 @@
+# Isolated Poland Ads reauthorization
+
+The stored separate Poland grant failed at the Google token endpoint with HTTP 400 after version 310 selected it. Do not infer invalid_grant, revoked consent, or a client mismatch from that redacted response.
+
+Restore the separately protected `/oauth/google/pl/start` handler from the earlier isolated OAuth preparation, requesting only openid/email/Ads (no Merchant, GA4 or GSC scopes). The handler uses a temporary setup code, PKCE, signed state, a ten-minute browser-bound cookie, and a verified fixed Google email before displaying any refresh token. It never writes Google account permissions or server secrets itself. The operator saves the resulting token directly as GOOGLE_PL_REFRESH_TOKEN in Cloudflare; GOOGLE_REFRESH_TOKEN must stay unchanged. Never copy the token into chat, git, logs or a screenshot. Disable the temporary setup code after completing the flow.
+
+The complete package adds `google-pl-oauth.mjs` and an early OAuth dispatch in `report-entry.mjs`; the other 12 modules, including the version-310 Ads credential repair, are unchanged. The release gate pins baseline c0ad7323-4d2a-4a46-92ed-b8f895bf5c87, all 14 module hashes, and the production entrypoint. TypeScript is stripped only while materializing the package; production has no TypeScript loader dependency. Existing legacy callbacks pass through unchanged. No Google grant is claimed until the owner completes consent; token issuance is not proof of Ads account access.
+
+Validation: 27 Node tests passed, including wrong account, unverified email, invalid/expired state, missing browser cookie, incomplete consent, secret redaction, missing setup code, and release isolation. Nine Python reporting tests passed in the preceding credential repair. After the owner saves a new grant, perform one Ads identity/campaign read and stop on rejection; do not cycle connections or OAuth grants.
